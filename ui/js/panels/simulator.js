@@ -8,6 +8,17 @@
 (function (A) {
   'use strict';
 
+  // Helper: Escape HTML for safe display in Prompt Inspector
+  function escapeHtml(text) {
+    if (!text) return '';
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
   function render(container) {
     // Initialize specific SIM state if missing or incomplete
     const _s = A.State.get();
@@ -147,11 +158,13 @@
             ${[
             { k: 'state', l: 'State' },
             { k: 'context', l: 'Ctx' },
-            { k: 'integrity', l: 'Valid' }, // Shortened
+            { k: 'prompt', l: 'Prompt' },   // NEW: Prompt Inspector
+            { k: 'tokens', l: 'Tokens' },   // NEW: Token Visualizer
+            { k: 'integrity', l: 'Valid' },
             { k: 'trace', l: 'Trace' },
             { k: 'stats', l: 'Stats' },
             { k: 'locations', l: 'Locs' },
-            { k: 'config', l: 'Cfg' }       // Shortened
+            { k: 'config', l: 'Cfg' }
           ].map(o => `
               <button class="btn btn-ghost btn-sm lens-tab-btn ${activeLens === o.k ? 'active' : ''}"
                       style="font-size:10px; padding:4px 8px; white-space:nowrap; ${activeLens === o.k ? 'background:var(--bg-surface); color:var(--text-primary); border:1px solid var(--border-subtle);' : ''}"
@@ -704,7 +717,12 @@
             <button class="btn btn-ghost btn-sm" id="btn-live-load" title="Load session">Load</button>
             <button class="btn btn-ghost btn-sm" id="btn-live-save" title="Save session">Save</button>
             <div style="width:1px; height:16px; background:var(--border-subtle);"></div>
+            <select class="input" id="branch-select" style="font-size:10px; padding:2px 6px; width:auto; min-width:80px; background:var(--bg-elevated);">
+              <option value="main">🌿 main</option>
+            </select>
+            <div style="width:1px; height:16px; background:var(--border-subtle);"></div>
             <button class="btn btn-ghost btn-sm" id="btn-run-all" title="Run Full Simulation Trace">Run Trace</button>
+            <button class="btn btn-ghost btn-sm" id="btn-export-story" title="Export as Story">Export</button>
             <button class="btn btn-ghost btn-sm" id="btn-clear-chat" style="color:var(--status-error);">Clear</button>
           </div>
         </div>
@@ -805,6 +823,7 @@
           actions.innerHTML = `
             <button class="chat-action-btn" data-action="edit" title="Edit">✏️</button>
             <button class="chat-action-btn" data-action="copy" title="Copy">📋</button>
+            <button class="chat-action-btn" data-action="fork" title="Fork from here">🌿</button>
             ${msg.role === 'model' ? '<button class="chat-action-btn" data-action="regenerate" title="Regenerate">🔄</button>' : ''}
             <button class="chat-action-btn danger" data-action="delete" title="Delete">🗑️</button>
           `;
@@ -856,6 +875,42 @@
           }
         } else if (action === 'regenerate') {
           regenerateMessage(index);
+        } else if (action === 'fork') {
+          // Create a new branch from this point
+          const branchName = prompt('Branch name:', `branch-${Date.now().toString(36)}`);
+          if (!branchName) return;
+
+          // Initialize branches structure if needed
+          if (!state.sim.branches) {
+            state.sim.branches = {
+              'main': {
+                history: JSON.parse(JSON.stringify(state.sim.history)),
+                createdAt: new Date().toISOString()
+              }
+            };
+            state.sim.activeBranch = 'main';
+          }
+
+          // Save current branch state
+          state.sim.branches[state.sim.activeBranch].history = JSON.parse(JSON.stringify(state.sim.history));
+
+          // Create new branch from this point (include messages up to and including selected)
+          const branchHistory = state.sim.history.slice(0, index + 1);
+          state.sim.branches[branchName] = {
+            history: JSON.parse(JSON.stringify(branchHistory)),
+            parentBranch: state.sim.activeBranch,
+            forkIndex: index,
+            createdAt: new Date().toISOString()
+          };
+
+          // Switch to new branch
+          state.sim.activeBranch = branchName;
+          state.sim.history = JSON.parse(JSON.stringify(branchHistory));
+
+          A.State.notify();
+          refreshChat();
+          refreshBranchSelect();
+          if (A.UI.Toast) A.UI.Toast.show(`Created branch "${branchName}"`, 'success');
         }
       }
 
@@ -975,7 +1030,15 @@
             if (lore && !finalContext.system_notes) systemPrompt += `\n[Context Notes]:\n${lore}\n`;
           }
 
+          // Append Context Summary (from auto-summarization)
+          if (state.sim.contextSummary) {
+            systemPrompt += `\n[Earlier Context]:\n${state.sim.contextSummary}\n`;
+          }
+
           sendBtn.textContent = 'Thinking...'; // Calling LLM
+
+          // Store system prompt for Prompt Inspector
+          state.sim.lastSystemPrompt = systemPrompt;
 
           // 3. CALL LLM (Action 7)
           const config = JSON.parse(localStorage.getItem('anansi_sim_config') || '{"provider":"gemini","model":"gemini-2.0-flash-exp"}');
@@ -1016,6 +1079,60 @@
         refreshChat();
       };
 
+      // --- Branch Management ---
+      const branchSelect = chatCol.querySelector('#branch-select');
+
+      function refreshBranchSelect() {
+        const state = A.State.get();
+        const branches = state.sim?.branches || {};
+        const activeBranch = state.sim?.activeBranch || 'main';
+
+        // Ensure at least 'main' exists
+        if (!branches.main) {
+          branches.main = { history: state.sim.history || [], createdAt: new Date().toISOString() };
+          state.sim.branches = branches;
+          state.sim.activeBranch = 'main';
+        }
+
+        branchSelect.innerHTML = '';
+        Object.keys(branches).forEach(name => {
+          const opt = document.createElement('option');
+          opt.value = name;
+          const msgCount = branches[name].history?.length || 0;
+          opt.textContent = `🌿 ${name} (${msgCount})`;
+          if (name === activeBranch) opt.selected = true;
+          branchSelect.appendChild(opt);
+        });
+      }
+
+      branchSelect.onchange = () => {
+        const state = A.State.get();
+        const targetBranch = branchSelect.value;
+        const currentBranch = state.sim.activeBranch || 'main';
+
+        if (targetBranch === currentBranch) return;
+
+        // Save current branch state
+        if (!state.sim.branches) state.sim.branches = {};
+        state.sim.branches[currentBranch] = {
+          ...state.sim.branches[currentBranch],
+          history: JSON.parse(JSON.stringify(state.sim.history))
+        };
+
+        // Load target branch
+        const target = state.sim.branches[targetBranch];
+        if (target) {
+          state.sim.history = JSON.parse(JSON.stringify(target.history || []));
+          state.sim.activeBranch = targetBranch;
+          A.State.notify();
+          refreshChat();
+          if (A.UI.Toast) A.UI.Toast.show(`Switched to "${targetBranch}"`, 'info');
+        }
+      };
+
+      // Initialize branch select
+      refreshBranchSelect();
+
       chatCol.querySelector('#btn-run-all').onclick = async () => {
         if (A.Tester) {
           A.Tester.clearTrace();
@@ -1023,6 +1140,63 @@
           await A.Tester.runAllScripts();
           A.State.notify(); // Re-render lens to show trace
         }
+      };
+
+      // --- Story Export ---
+      chatCol.querySelector('#btn-export-story').onclick = () => {
+        const state = A.State.get();
+        const history = state.sim?.history || [];
+
+        if (!history.length) {
+          if (A.UI.Toast) A.UI.Toast.show('No messages to export', 'warning');
+          return;
+        }
+
+        // Get character name for the story
+        const characterName = state.character?.char?.name || 'Character';
+
+        // Convert chat to prose
+        const storyLines = [];
+        storyLines.push(`# Story Export`);
+        storyLines.push(`*Featuring: ${characterName}*`);
+        storyLines.push('');
+        storyLines.push('---');
+        storyLines.push('');
+
+        history.forEach(msg => {
+          if (msg.role === 'system') return; // Skip system messages
+
+          let content = msg.content || '';
+
+          // Convert *action* to italics (already markdown-style)
+          // Leave formatting as-is since we're exporting to markdown
+
+          if (msg.role === 'user') {
+            // User messages as their perspective
+            storyLines.push(content);
+          } else if (msg.role === 'model') {
+            // AI messages as the character
+            storyLines.push(content);
+          }
+
+          storyLines.push(''); // Add spacing between messages
+        });
+
+        const storyText = storyLines.join('\n');
+
+        // Create download
+        const blob = new Blob([storyText], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        a.href = url;
+        a.download = `story_${characterName.toLowerCase().replace(/\s+/g, '_')}_${timestamp}.md`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        if (A.UI.Toast) A.UI.Toast.show('Story exported successfully', 'success');
       };
 
       // --- Live Session Management ---
@@ -1316,6 +1490,164 @@
           });
         }
         lensContent.innerHTML += '</div>';
+
+      } else if (activeLens === 'prompt') {
+        // PROMPT INSPECTOR - Show the last system prompt sent to LLM
+        const lastPrompt = state.sim?.lastSystemPrompt || null;
+
+        lensContent.innerHTML = '<div style="padding:12px; font-family:var(--font-mono); font-size:11px;">';
+        lensContent.innerHTML += '<div style="margin-bottom:12px; font-weight:bold; color:var(--accent-primary); border-bottom:1px solid var(--border-subtle); padding-bottom:8px;">System Prompt Inspector</div>';
+
+        if (!lastPrompt) {
+          lensContent.innerHTML += '<div style="color:var(--text-muted); font-style:italic;">No prompt captured yet. Send a message to see the system prompt.</div>';
+        } else {
+          // Token estimate for the prompt
+          const promptTokens = A.Utils?.estimateTokens ? A.Utils.estimateTokens(lastPrompt) : Math.ceil(lastPrompt.length / 4);
+          lensContent.innerHTML += `<div style="margin-bottom:8px; padding:6px 8px; background:var(--bg-elevated); border-radius:4px; display:flex; justify-content:space-between;">
+            <span style="color:var(--text-muted);">Estimated Tokens:</span>
+            <span style="color:var(--accent-secondary); font-weight:bold;">${promptTokens.toLocaleString()}</span>
+          </div>`;
+
+          // The prompt itself in a scrollable code block
+          lensContent.innerHTML += `<pre style="background:var(--ink-900); padding:12px; border-radius:6px; white-space:pre-wrap; word-break:break-word; max-height:400px; overflow-y:auto; border:1px solid var(--border-subtle); color:var(--text-primary);">${escapeHtml(lastPrompt)}</pre>`;
+
+          // Copy button
+          lensContent.innerHTML += `<button class="btn btn-ghost btn-sm" id="btn-copy-prompt" style="margin-top:8px; width:100%;">📋 Copy Prompt</button>`;
+        }
+        lensContent.innerHTML += '</div>';
+
+        // Bind copy button
+        const copyBtn = lensContent.querySelector('#btn-copy-prompt');
+        if (copyBtn) {
+          copyBtn.onclick = () => {
+            navigator.clipboard.writeText(lastPrompt);
+            if (A.UI.Toast) A.UI.Toast.show('Prompt copied to clipboard', 'success');
+          };
+        }
+
+      } else if (activeLens === 'tokens') {
+        // TOKEN VISUALIZER - Show context window usage
+        const lastPrompt = state.sim?.lastSystemPrompt || '';
+        const history = state.sim?.history || [];
+
+        // Estimate tokens
+        const estimateTokens = A.Utils?.estimateTokens ? A.Utils.estimateTokens : (t => Math.ceil(String(t).length / 4));
+        const promptTokens = estimateTokens(lastPrompt);
+        const historyText = history.map(m => m.content || '').join(' ');
+        const historyTokens = estimateTokens(historyText);
+        const totalTokens = promptTokens + historyTokens;
+
+        // Assume 8K context window (configurable in future)
+        const maxTokens = 8000;
+        const usagePercent = Math.min(100, Math.round((totalTokens / maxTokens) * 100));
+        const remaining = Math.max(0, maxTokens - totalTokens);
+
+        // Color based on usage
+        let barColor = 'var(--status-success)';
+        if (usagePercent > 70) barColor = 'var(--status-warning)';
+        if (usagePercent > 90) barColor = 'var(--status-error)';
+
+        lensContent.innerHTML = `
+          <div style="padding:12px;">
+            <div style="margin-bottom:12px; font-weight:bold; color:var(--accent-primary); border-bottom:1px solid var(--border-subtle); padding-bottom:8px;">Context Window Usage</div>
+            
+            <!-- Progress Bar -->
+            <div style="background:var(--bg-elevated); border-radius:8px; overflow:hidden; height:24px; margin-bottom:12px; border:1px solid var(--border-subtle);">
+              <div style="width:${usagePercent}%; height:100%; background:${barColor}; transition:width 0.3s ease;"></div>
+            </div>
+            
+            <div style="display:flex; justify-content:space-between; margin-bottom:16px; font-size:12px;">
+              <span style="color:var(--text-muted);">${usagePercent}% Used</span>
+              <span style="color:var(--text-primary); font-weight:bold;">${totalTokens.toLocaleString()} / ${maxTokens.toLocaleString()} tokens</span>
+            </div>
+            
+            <!-- Breakdown -->
+            <div style="font-size:11px; font-family:var(--font-mono); display:flex; flex-direction:column; gap:8px;">
+              <div style="display:flex; justify-content:space-between; padding:6px 8px; background:var(--bg-surface); border-radius:4px;">
+                <span style="color:var(--text-muted);">System Prompt</span>
+                <span style="color:var(--accent-primary);">${promptTokens.toLocaleString()}</span>
+              </div>
+              <div style="display:flex; justify-content:space-between; padding:6px 8px; background:var(--bg-surface); border-radius:4px;">
+                <span style="color:var(--text-muted);">Chat History (${history.length} msgs)</span>
+                <span style="color:var(--accent-secondary);">${historyTokens.toLocaleString()}</span>
+              </div>
+              <div style="display:flex; justify-content:space-between; padding:6px 8px; background:var(--bg-elevated); border-radius:4px; border:1px solid var(--border-subtle);">
+                <span style="color:var(--text-primary); font-weight:bold;">Remaining</span>
+                <span style="color:${remaining < 500 ? 'var(--status-error)' : 'var(--status-success)'}; font-weight:bold;">${remaining.toLocaleString()}</span>
+              </div>
+            </div>
+            
+            ${usagePercent > 80 ? '<div style="margin-top:12px; padding:8px; background:rgba(255,200,0,0.1); border-left:3px solid var(--status-warning); font-size:11px; color:var(--status-warning);">⚠️ Context window is filling up. Consider summarizing or clearing older messages.</div>' : ''}
+            
+            <!-- Summarize Controls -->
+            ${history.length > 4 ? `
+              <div style="margin-top:16px; padding-top:12px; border-top:1px solid var(--border-subtle);">
+                <div style="font-size:10px; color:var(--text-muted); margin-bottom:8px; text-transform:uppercase; font-weight:bold;">Context Management</div>
+                <button class="btn btn-secondary btn-sm" id="btn-summarize-history" style="width:100%;">📝 Summarize Oldest Messages</button>
+                <div style="font-size:9px; color:var(--text-muted); margin-top:4px; text-align:center;">Compresses first half of chat history into a summary</div>
+              </div>
+            ` : ''}
+            
+            ${state.sim?.contextSummary ? `
+              <div style="margin-top:12px; padding:8px; background:var(--bg-surface); border-radius:4px; border:1px solid var(--border-subtle);">
+                <div style="font-size:9px; color:var(--text-muted); margin-bottom:4px; text-transform:uppercase;">Active Summary</div>
+                <div style="font-size:11px; color:var(--text-secondary); white-space:pre-wrap;">${escapeHtml(state.sim.contextSummary)}</div>
+                <button class="btn btn-ghost btn-sm" id="btn-clear-summary" style="margin-top:8px; font-size:10px; width:100%;">Clear Summary</button>
+              </div>
+            ` : ''}
+          </div>
+        `;
+
+        // Bind summarize button
+        const summarizeBtn = lensContent.querySelector('#btn-summarize-history');
+        if (summarizeBtn) {
+          summarizeBtn.onclick = () => {
+            const currentState = A.State.get();
+            const currentHistory = currentState.sim?.history || [];
+
+            if (currentHistory.length < 5) {
+              if (A.UI.Toast) A.UI.Toast.show('Not enough messages to summarize', 'warning');
+              return;
+            }
+
+            // Take first half of messages to summarize
+            const splitPoint = Math.floor(currentHistory.length / 2);
+            const toSummarize = currentHistory.slice(0, splitPoint);
+            const toKeep = currentHistory.slice(splitPoint);
+
+            // Build a simple summary
+            const summaryParts = [];
+            toSummarize.forEach(msg => {
+              const preview = (msg.content || '').slice(0, 100);
+              const role = msg.role === 'user' ? 'User' : msg.role === 'model' ? 'Character' : 'System';
+              if (preview) summaryParts.push(`${role}: ${preview}${msg.content.length > 100 ? '...' : ''}`);
+            });
+
+            // Create context summary
+            currentState.sim.contextSummary = `[Earlier in conversation (${toSummarize.length} messages)]\n${summaryParts.join('\n')}`;
+
+            // Replace history with only kept messages
+            currentState.sim.history = toKeep;
+
+            A.State.notify();
+            updateGlobalLens(); // Refresh to show new state
+            if (typeof refreshChat === 'function') refreshChat();
+
+            if (A.UI.Toast) A.UI.Toast.show(`Summarized ${toSummarize.length} messages`, 'success');
+          };
+        }
+
+        // Bind clear summary button
+        const clearSummaryBtn = lensContent.querySelector('#btn-clear-summary');
+        if (clearSummaryBtn) {
+          clearSummaryBtn.onclick = () => {
+            const currentState = A.State.get();
+            delete currentState.sim.contextSummary;
+            A.State.notify();
+            updateGlobalLens();
+            if (A.UI.Toast) A.UI.Toast.show('Summary cleared', 'info');
+          };
+        }
 
       } else if (activeLens === 'config') {
         const config = JSON.parse(localStorage.getItem('anansi_sim_config') || '{"provider":"gemini","model":"gemini-2.0-flash"}');
