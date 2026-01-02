@@ -1,0 +1,12 @@
+{
+    "name": "anansi-desktop",
+    "version": "1.0.0",
+    "description": "Anansi Desktop Wrapper",
+    "scripts": {
+        "tauri": "tauri"
+    },
+    "dependencies": {
+        "@tauri-apps/cli": "^1.5.0",
+        "@tauri-apps/api": "^1.5.0"
+    }
+}

@@ -1,0 +1,22 @@
+# Build outputs
+/src-tauri/target/
+/node_modules/
+/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Lock files (optional - you may want to keep these)
+# package-lock.json
+# Cargo.lock
