@@ -213,11 +213,11 @@
                 });
             } else {
                 const type = (e.type || '').toLowerCase();
-                // Strict Global: Only System Scripts are Global. Everything else without an actor is Unassociated.
-                if (type === 'script') {
-                    globalItems.push(e);
-                } else {
+                // Split logic
+                if (['microcue', 'voice', 'actor-cue', 'pair'].includes(type)) {
                     unassociatedItems.push(e);
+                } else {
+                    globalItems.push(e);
                 }
             }
         });
@@ -227,7 +227,7 @@
             const passedCount = items.filter(i => i.passed).length;
             const statusColor = passedCount > 0 ? 'var(--status-success)' : 'var(--text-muted)';
 
-            // Sub-group items by type (Voices, Microcues, etc.)
+            // Sub-group by Type
             const byType = {};
             items.forEach(e => {
                 const t = (e.type || 'other').toLowerCase();
@@ -247,24 +247,24 @@
                 'other': '📦 Other'
             };
 
-            let subHtml = Object.keys(byType).sort().map(type => {
+            let subHtml = Object.keys(byType).map(type => {
                 const subItems = byType[type];
-                return `<details open style="margin-top:4px; margin-left:8px; border-left:2px solid var(--border-subtle);">
-                    <summary style="font-size:11px; padding:4px 8px; color:var(--text-secondary); cursor:pointer; list-style:none; opacity:0.9;">
-                        ${typeLabels[type] || typeLabels['other']} (${subItems.length})
-                    </summary>
-                    <div style="padding-left:8px;">
+                return `
+                    <div style="margin-left:12px; margin-bottom:4px; border-left:2px solid var(--border-subtle);">
+                        <div style="padding:4px 8px; font-size:10px; font-weight:bold; color:var(--text-secondary); background:var(--bg-base);">
+                            ${typeLabels[type] || typeLabels['other']} (${subItems.length})
+                        </div>
                         ${renderEntries(subItems)}
                     </div>
-                </details>`;
+                `;
             }).join('');
 
-            return `<details open style="margin-bottom:8px; border:1px solid var(--border-subtle); border-radius:4px; background:var(--bg-group);">
-                <summary class="flow-group-summary" style="padding:8px 12px; font-weight:bold; cursor:pointer; list-style:none; display:flex; align-items:center;">
+            return `<details open style="border-bottom:1px solid var(--border-subtle);">
+                <summary class="flow-group-summary" style="font-weight:bold; font-size:12px;">
                     <span style="color:${statusColor}; margin-right:6px;">${passedCount > 0 ? '●' : '○'}</span>
                     ${actorName} <span style="opacity:0.6; margin-left:4px;">(${items.length})</span>
                 </summary>
-                <div style="padding:4px 0 8px 12px;">
+                <div style="padding:8px 0;">
                     ${subHtml}
                 </div>
             </details>`;
@@ -272,25 +272,25 @@
 
         let otherHtml = '';
 
-        // Render Global items
+        // Render Global
         if (globalItems.length > 0) {
-            otherHtml += `<details open style="border-bottom:1px solid var(--border-subtle); margin-top:12px;">
-                <summary class="flow-group-summary" style="padding:8px; font-weight:normal; color:var(--text-secondary); cursor:pointer;">
-                    <span style="margin-right:6px;">🌐</span> Global <span style="opacity:0.6; margin-left:4px;">(${globalItems.length})</span>
+            otherHtml += `<details open style="margin-top:8px;">
+                <summary class="flow-group-summary" style="color:var(--text-secondary);">
+                     🌐 Global (${globalItems.length})
                 </summary>
-                <div style="padding-left:16px;">
+                <div style="padding-left:12px;">
                     ${renderEntries(globalItems)}
                 </div>
             </details>`;
         }
 
-        // Render Unassociated items
+        // Render Unassociated
         if (unassociatedItems.length > 0) {
-            otherHtml += `<details open style="border-bottom:1px solid var(--border-subtle); margin-top:8px;">
-                <summary class="flow-group-summary" style="padding:8px; font-weight:normal; color:var(--status-warning); cursor:pointer;">
-                    <span style="margin-right:6px;">⚠️</span> Unassociated <span style="opacity:0.6; margin-left:4px;">(${unassociatedItems.length})</span>
+            otherHtml += `<details open style="margin-top:8px;">
+                <summary class="flow-group-summary" style="color:var(--status-warning);">
+                     ⚠️ Unassociated (${unassociatedItems.length})
                 </summary>
-                <div style="padding-left:16px;">
+                <div style="padding-left:12px;">
                     ${renderEntries(unassociatedItems)}
                 </div>
             </details>`;
@@ -311,23 +311,15 @@
             'event': [],
             'scoring': [],
             'advanced': [],
-            'pair': [], // Ensure pair bucket exists
             'other': []
         };
 
         entries.forEach(e => {
-            let t = (e.type || 'other').toLowerCase();
-
-            // Correction: Move 'Rivals' to 'pair'
-            if (e.name && e.name.toLowerCase().includes('rivals')) {
-                t = 'pair';
-            }
-
+            const t = (e.type || 'other').toLowerCase();
             if (byType[t]) byType[t].push(e);
             else byType['other'].push(e);
         });
 
-        // Terminology Update: Others -> Global
         const typeLabels = {
             'lorebook': '📖 Lorebook',
             'microcue': '🎭 Microcues',
@@ -336,8 +328,7 @@
             'event': '⚡ Events',
             'scoring': '🎲 Scoring',
             'advanced': '⚙️ Custom Rules',
-            'pair': '👥 Pairs',
-            'other': '🌐 Global' // Was '📦 Other'
+            'other': '📦 Other'
         };
 
         let html = '';
@@ -366,12 +357,7 @@
                         if (['microcue', 'voice', 'actor-cue', 'pair'].includes(type)) {
                             unassociatedItems.push(item);
                         } else {
-                            // Terminology: User wants these called "Unassociated" too if they are sub-items under a type?
-                            // "You call Unassociated sub items Global. This is misleading. Call them Unassociated."
-                            // Previously: globalItems.
-                            // I will merge them into unassociatedItems logic or rename the label.
-                            // Let's treat them all as unassociated if they are inside a Type grouping but have no actor.
-                            unassociatedItems.push(item);
+                            globalItems.push(item);
                         }
                     }
                 });
@@ -400,11 +386,22 @@
                     </details>`;
                 });
 
-                // Render Unassociated Items (Merged Global + Unassociated)
-                // Label as "Unassociated" per user request
-                if (unassociatedItems.length > 0) {
+                // Render Global Items
+                if (globalItems.length > 0) {
                     html += `<details style="border-bottom:1px solid var(--border-subtle);">
                         <summary class="flow-group-summary" style="padding-left:24px; font-weight:normal; color:var(--text-secondary);">
+                            <span style="margin-right:6px;">🌐</span> Global <span style="opacity:0.6; margin-left:4px;">(${globalItems.length})</span>
+                        </summary>
+                        <div style="padding-left:16px;">
+                            ${renderEntries(globalItems)}
+                        </div>
+                    </details>`;
+                }
+
+                // Render Unassociated Items (Warnings)
+                if (unassociatedItems.length > 0) {
+                    html += `<details open style="border-bottom:1px solid var(--border-subtle);">
+                        <summary class="flow-group-summary" style="padding-left:24px; font-weight:normal; color:var(--status-warning);">
                             <span style="margin-right:6px;">⚠️</span> Unassociated <span style="opacity:0.6; margin-left:4px;">(${unassociatedItems.length})</span>
                         </summary>
                         <div style="padding-left:16px;">
@@ -416,7 +413,7 @@
                 html += `</div></details>`;
 
             } else {
-                // Standard Rendering for other types (Global/Other)
+                // Standard Rendering for other types
                 html += `<details open style="margin-bottom:1px;">
                     <summary class="flow-group-summary" style="color:var(--text-primary);">
                         ${typeLabels[type]} (${items.length})
@@ -431,54 +428,6 @@
         return html;
     }
 
-    // Expose helper for click handlers
-    A.FlowExplorer = A.FlowExplorer || {};
-    A.FlowExplorer.showContent = function (encodedContent, name, encodedTarget) {
-        if (!encodedContent) return;
-        try {
-            const content = decodeURIComponent(encodedContent);
-            const target = encodedTarget ? decodeURIComponent(encodedTarget) : '';
-            const contentDiv = document.createElement('div');
-
-            // Header for Target
-            if (target && target !== 'undefined' && target !== 'Unknown Target') {
-                const header = document.createElement('div');
-                header.style.cssText = 'font-size:10px; color:var(--text-muted); margin-bottom:8px; border-bottom:1px solid var(--border-subtle); padding-bottom:8px;';
-                header.innerHTML = `INSERT INTO: <strong style="color:var(--text-primary); font-family:monospace;">${target}</strong>`;
-                contentDiv.appendChild(header);
-            }
-
-            // Format content Body
-            const bodyDiv = document.createElement('div');
-            if (content.trim().startsWith('{') || content.trim().startsWith('[')) {
-                try {
-                    const obj = JSON.parse(content);
-                    bodyDiv.innerHTML = `<pre style="font-size:11px; white-space:pre-wrap; color:var(--text-primary); margin:0;">${JSON.stringify(obj, null, 2).replace(/</g, '&lt;')}</pre>`;
-                } catch (e) {
-                    bodyDiv.innerHTML = `<div style="font-size:12px; white-space:pre-wrap; font-family:monospace; color:var(--text-primary);">${content.replace(/</g, '&lt;')}</div>`;
-                }
-            } else {
-                bodyDiv.innerHTML = `<div style="font-size:12px; white-space:pre-wrap; font-family:monospace; color:var(--text-primary);">${content.replace(/</g, '&lt;')}</div>`;
-            }
-            contentDiv.appendChild(bodyDiv);
-
-            // Use the centralized UI Modal
-            if (A.UI && A.UI.Modal) {
-                A.UI.Modal.show({
-                    title: name,
-                    content: contentDiv,
-                    width: 600,
-                    actions: [
-                        { label: 'Close', onclick: () => true }
-                    ]
-                });
-            } else {
-                // Fallback if UI.Modal missing (unlikely)
-                console.error('Anansi UI Modal system not found.');
-            }
-        } catch (e) { console.error(e); }
-    };
-
     function renderEntries(entries) {
         if (!entries || entries.length === 0) {
             return '<div style="padding:20px; text-align:center; color:var(--text-muted);">No rules evaluated this turn.</div>';
@@ -489,26 +438,12 @@
             const iconColor = entry.passed ? 'var(--status-success)' : 'var(--status-error)';
             const entryClass = entry.passed ? 'flow-pass' : 'flow-fail';
 
-            let clickAttr = '';
-            let cursorStyle = '';
-            let hint = '';
-
-            // If passed and has content, make clickable
-            if (entry.passed && entry.metadata && entry.metadata.content) {
-                const safeContent = encodeURIComponent(entry.metadata.content);
-                const safeTarget = encodeURIComponent(entry.metadata.target || '');
-                const safeName = (entry.name || 'Rule').replace(/'/g, "\\'");
-                clickAttr = `onclick="Anansi.FlowExplorer.showContent('${safeContent}', '${safeName}', '${safeTarget}')"`;
-                cursorStyle = 'cursor:pointer;';
-                hint = 'title="Click to view content"';
-            }
-
             return `
-                <div class="flow-entry ${entryClass}" ${clickAttr} ${hint} style="${cursorStyle}">
+                <div class="flow-entry ${entryClass}">
                     <div style="display:flex; align-items:center;">
                         <span class="flow-icon" style="color:${iconColor};">${icon}</span>
                         <span class="flow-name">${entry.name}</span>
-                        ${(entry.passed && entry.metadata?.content) ? '<span style="margin-left:auto;font-size:10px;opacity:0.5;">👁️</span>' : ''}
+                        <!-- <span class="flow-type">${entry.type}</span> Type redundant in grouped view but okay to keep -->
                     </div>
                     <div class="flow-reason">${entry.reason || 'No reason provided'}</div>
                 </div>
