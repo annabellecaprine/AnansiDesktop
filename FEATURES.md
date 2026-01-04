@@ -1,8 +1,16 @@
 # Anansi: Feature List by Panel
 
-**As of: January 3, 2026 (v1.5.0)**
+**As of: January 3, 2026 (v1.6.0)**
 
 ---
+
+## 🚀 Key Features
+
+### 🪄 AI Text Assistance (New in v1.6.0)
+- **Magic Wand Tool**: Integrated into Project, Character, Actor, Lorebook, and Location panels.
+- **Provider Agnostic**: Use Kobold (Local), Gemini, OpenAI, or any compatible API.
+- **Context Aware**: Specialized system prompts for Personas, Scenarios, and Descriptions.
+- **Privacy Focused**: Keys stored locally; optional usage.
 
 ## 🏛️ LOOM (Project Management)
 
@@ -76,6 +84,8 @@
 - Entry categories
 - Shift/append logic for dynamic content
 - Token counting per entry
+- **Import/Export support (JSON)**
+- **Granular Import Conflict Resolution (Overwrite/Copy/Skip)**
 
 ### Scoring Panel
 - Stat block definitions (numeric ranges)
@@ -139,6 +149,11 @@
 - Enable/disable scripts
 - Script ordering
 - Auto-complete & linting
+- **Script Repository (Built-in presets)**
+  - RPG Travel System
+  - Day/Night Cycle
+  - Inventory System
+  - API Reference / Cheatsheet
 
 ---
 
@@ -167,6 +182,7 @@
 ### Locations Panel
 - World map location definitions
 - Exit/connection mapping
+- **Bi-directional exit auto-linking**
 - Location descriptions
 
 ### Stats Panel
@@ -197,6 +213,18 @@
 - Responsive layout
 - Project picker with recent projects
 
+## 📜 Change Log
+
+### v1.6.0 - January 4, 2026
+- **New Feature**: **Script Repository** added to Scripts panel. Includes checked-in presets:
+  - *RPG Travel System*: Automated map navigation.
+  - *Inventory System*: Basic item tracking.
+  - *Day/Night Cycle*: Time tracking.
+  - *API Reference*: Internal scripting cheatsheet.
+- **New Feature**: **Lorebook Import/Export** (JSON) with **Conflict Resolver** (Overwrite/Copy/Skip).
+- **New Feature**: **Bi-directional Location Linking**. Creating an exit automatically links the return path.
+- **Fix**: Lorebook Export button now correctly triggers download.
+
 ---
 
-*Last updated: January 3, 2026 (v1.5.0)*
+*Last updated: January 4, 2026*
