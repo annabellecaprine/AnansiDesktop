@@ -51,7 +51,6 @@
 
                 // Displays
                 displayName: document.getElementById('display-project-name'),
-                displayEnv: document.getElementById('display-env-badge'),
                 btnToggleLens: document.getElementById('btn-toggle-lens'),
                 btnHelp: document.getElementById('btn-help'),
                 lensRoot: document.getElementById('lens-root'),
@@ -109,7 +108,6 @@
             A.State.subscribe(state => {
                 if (!state) return;
                 this.els.displayName.textContent = state.meta.name + (state.isDirty ? ' •' : '');
-                this.els.displayEnv.textContent = state.environment.id.toUpperCase();
                 this.updateIntegrityBadge(state);
             });
 
@@ -223,7 +221,6 @@
             const state = A.State.get();
             if (state) {
                 this.els.displayName.textContent = state.meta.name + (state.isDirty ? ' •' : '');
-                this.els.displayEnv.textContent = state.environment.id.toUpperCase();
                 this.updateIntegrityBadge(state);
             }
         },
@@ -290,16 +287,49 @@
 
         toggleLens: function (force) {
             const shell = this.els.appShell;
-            const isCollapsed = force !== undefined ? force : !shell.classList.contains('lens-collapsed');
+            // Responsive check: if window is narrow, treating as mobile drawer
+            const isMobile = window.innerWidth <= 768;
 
-            if (isCollapsed) {
-                shell.classList.add('lens-collapsed');
+            if (isMobile) {
+                // Mobile: toggle 'lens-open' class
+                const isHidden = !shell.classList.contains('lens-open');
+                // if force is provided: true = open, false = close
+                const shouldOpen = force !== undefined ? !force : isHidden;
+
+                if (shouldOpen) {
+                    shell.classList.add('lens-open');
+                } else {
+                    shell.classList.remove('lens-open');
+                }
             } else {
-                shell.classList.remove('lens-collapsed');
+                // Desktop: toggle 'lens-collapsed' (existing logic)
+                const isCollapsed = force !== undefined ? force : !shell.classList.contains('lens-collapsed');
+
+                if (isCollapsed) {
+                    shell.classList.add('lens-collapsed');
+                } else {
+                    shell.classList.remove('lens-collapsed');
+                }
+                localStorage.setItem('anansi_lens_collapsed', isCollapsed);
             }
-            localStorage.setItem('anansi_lens_collapsed', isCollapsed);
         }
     };
+
+    // Close lens on click outside (mobile overlay)
+    document.addEventListener('click', (e) => {
+        if (window.innerWidth <= 768 && A.UI && A.UI.els && A.UI.els.appShell) {
+            const shell = A.UI.els.appShell;
+            if (shell.classList.contains('lens-open')) {
+                // If clicking overlay (pseudo-element click usually registers on parent or we check target)
+                // Actually, the CSS ::after overlay isn't a DOM element we can click directly easily without pointer-events tricks.
+                // But typically users click the "main" area.
+                // Let's check if the click target is NOT inside the lens and NOT the toggle button.
+                if (!e.target.closest('.web-lens') && !e.target.closest('#btn-toggle-lens')) {
+                    A.UI.toggleLens(true); // Force close (collapsed/hidden)
+                }
+            }
+        }
+    });
 
     // Extend UI with toggleTheme if missing (was in original file, ensuring it's kept)
     UI.toggleTheme = function () {
