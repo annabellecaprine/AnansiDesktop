@@ -1,6 +1,6 @@
 # Anansi: Feature List by Panel
 
-**As of: January 3, 2026 (v1.6.0)**
+**As of: January 5, 2026 (v1.6.4)**
 
 ---
 
@@ -40,6 +40,7 @@
 - Character name, personality, scenario editing
 - Example dialogue management
 - **First Message Configuration (with token count)**
+- **Alternate Initial Messages (Swipe in Simulator)**
 - **Portrait Upload & Preview**
 - Token counting for all fields
 
@@ -84,6 +85,8 @@
 - Entry categories
 - Shift/append logic for dynamic content
 - Token counting per entry
+- **Import/Export support (JSON)**
+- **Granular Import Conflict Resolution (Overwrite/Copy/Skip)**
 
 ### Scoring Panel
 - Stat block definitions (numeric ranges)
@@ -132,7 +135,7 @@
 - **TRACE**: Script execution trace
 - **STATS**: Scoring stat values
 - **LOCS**: Location map
-- **CFG**: LLM provider/model config, API key manager
+- **CFG**: **Consolidated API Configuration** (Provider presets, auto-filled URLs)
 
 **Advanced Features:**
 - Per-message injection inspector (ℹ️ button)
@@ -147,6 +150,11 @@
 - Enable/disable scripts
 - Script ordering
 - Auto-complete & linting
+- **Script Repository (Built-in presets)**
+  - RPG Travel System
+  - Day/Night Cycle
+  - Inventory System
+  - API Reference / Cheatsheet
 
 ---
 
@@ -175,6 +183,7 @@
 ### Locations Panel
 - World map location definitions
 - Exit/connection mapping
+- **Bi-directional exit auto-linking**
 - Location descriptions
 
 ### Stats Panel
@@ -193,18 +202,78 @@
 ## 🔧 Global Features
 
 - Dark/Light theme toggle
+- **Keyboard Shortcuts**: `Ctrl/Cmd + S` (Save), `Ctrl/Cmd + B` (Build), `Ctrl/Cmd + N` (New), `Ctrl/Cmd + ,` (Settings), `Ctrl/Cmd + [` (Back), `1-9` (Panel navigation)
+- **Panel Navigation History**: Back button and session-based history tracking
+- **Sidebar Search**: Real-time panel filtering
+- **Unsaved Changes Indicator**: Glowing save button when project is dirty
 - Project save/load (JSON)
 - Project export (.anansi.json)
 - **Character Card v2 Export/Import (PNG)**
 - Build scripts (download .txt or .zip)
-- Toast notifications
+- **Comprehensive toast notifications** for all major actions
 - Modal dialogs
 - **Collapsible Sidebar**: Clean, persistent navigation categories.
+- **Consistent empty states** with helpful CTAs
 - Guided tours (Help button)
 - Panel transitions
 - Responsive layout
 - Project picker with recent projects
 
+## 📜 Change Log
+
+### v1.6.4 - January 5, 2026
+- **New Feature**: **Keyboard Shortcuts**. Global shortcuts for common actions:
+  - `Ctrl/Cmd + S`: Save Project
+  - `Ctrl/Cmd + B`: Build (Export AURA)
+  - `Ctrl/Cmd + N`: New Project
+  - `Ctrl/Cmd + ,`: Jump to Project Settings
+  - `Ctrl/Cmd + [`: Go Back in panel history
+  - Number keys `1-9`: Navigate to corresponding visible panel
+- **New Feature**: **Panel Navigation History**. Track last 5 visited panels with Back button and keyboard shortcut (`Ctrl/Cmd + [`). Session-only, intelligently avoids duplicates.
+- **New Feature**: **Sidebar Search**. Real-time, case-insensitive panel filtering in the left navigation bar.
+- **New Feature**: **Unsaved Changes Indicator**. Glowing save button when project has unsaved changes.
+- **Improvement**: **Comprehensive Toast Notifications**. Added consistent feedback for create actions across Lorebook, Pairs, Scoring, and Locations panels.
+- **Improvement**: **Consistent Empty States**. Applied centralized empty state helper to Voices, Events, and Scoring panels with helpful CTAs.
+
+### v1.6.3 - January 5, 2026
+- **New Feature**: **Platform Guides**. Added a Help icon in the Top Bar that opens comprehensive instructions for exporting to platforms like SillyTavern, JanitorAI, and Chub.ai.
+- **New Feature**: **Lorebook Mobile Export**. Export lorebooks as `.txt` files to support mobile/tablet devices where `.json` handling is difficult.
+- **New Feature**: **Multi-Select Deletion**. Added bulk selection and deletion capability to Lorebook, Actors, Events, Scripts, and Locations panels. Protection for System Scripts included.
+- **New Feature**: **About Modal**. Click the Anansi logo to view version info and credits. Customizable via `ABOUT.html`.
+- **Fix**: **Lorebook Import**. Added support for Chub.ai "Dictionary" style lorebooks.
+- **Fix**: **Lorebook UI**. Entry count now updates immediately upon import.
+- **Fix**: **Tokens Panel Scroll**. Added vertical scrolling for reports on smaller screens.
+- **Technical**: Improved local file support for About modal (iframe) and added cache-busting.
+
+### v1.6.2 - January 5, 2026
+- **New Feature**: **Director's Console**. Collapsible toolbar in Live Chat with Guidance injection field for direct LLM prompt control.
+- **New Feature**: **Procedural Avatars**. Character portraits in chat animate based on emotional state (shake, glow, bounce effects).
+- **Fix**: JanitorAI lorebook import now correctly reads `key` field (was only checking `keys`/`keywords`).
+- **Fix**: Dropdown option visibility in dark mode improved.
+- **Fix**: Export generation now correctly handles `character.scenario` injection targets for Lorebook, Events, and Scoring.
+- **Fix**: Resolved silent failure during project import caused by masked IndexedDB errors.
+- **Fix**: Fixed UI crash (Modal error) occurring after successful project import.
+- **Improved**: Enhanced error reporting for import failures to show specific causes (e.g., storage quotas).
+
+### v1.6.0 - January 4, 2026
+- **New Feature**: **Script Repository** added to Scripts panel. Includes checked-in presets:
+  - *RPG Travel System*: Automated map navigation.
+  - *Inventory System*: Basic item tracking.
+  - *Day/Night Cycle*: Time tracking.
+  - *API Reference*: Internal scripting cheatsheet.
+- **New Feature**: **Lorebook Import/Export** (JSON) with **Conflict Resolver** (Overwrite/Copy/Skip).
+- **New Feature**: **Bi-directional Location Linking**. Creating an exit automatically links the return path.
+- **New Feature**: **Alternate Initial Messages**. Define multiple greetings and swipe through them in the Simulator. Index tracked via `state.sim.greetingIndex`.
+- **New Feature**: **Consolidated API Configuration Modal**. Tabbed interface with provider presets (OpenAI, Anthropic, Gemini, Kobold, Chutes, Custom) that auto-fill URLs.
+- **New Feature**: **Generation Settings**. Full control over Temperature, Max Tokens, Context Size, Top P/K, Repetition/Frequency/Presence Penalties.
+- **Improvement**: **Import/Export Terminology Standardized**. Scripts panel now uses "Import/Export". AURA Bundle merged into Export modal.
+- **Fix**: Lorebook Export button now correctly triggers download.
+- **Fix**: Lorebook Shift delete button now works correctly.
+- **Fix**: Removed missing `utils.js` reference (404 error).
+- **Fix**: API key reading now uses consolidated config system.
+- **New Feature**: **Character Book Export**. Character Cards now include associated lorebook entries (those with "Associate with Actors" checked) as embedded `character_book` data.
+- **Fix**: **Character Book Import**. Importing V2 cards now correctly restores embedded character_book entries (with conflict resolution).
+
 ---
 
-*Last updated: January 3, 2026 (v1.5.0)*
+*Last updated: January 5, 2026*
