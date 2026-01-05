@@ -216,6 +216,13 @@
 
 ## 📜 Change Log
 
+### v1.6.1 - January 5, 2026
+- **New Feature**: **Director's Console**. Collapsible toolbar in Live Chat with Guidance injection field for direct LLM prompt control.
+- **New Feature**: **Procedural Avatars**. Character portraits in chat animate based on emotional state (shake, glow, bounce effects).
+- **Fix**: JanitorAI lorebook import now correctly reads `key` field (was only checking `keys`/`keywords`).
+- **Fix**: Dropdown option visibility in dark mode improved.
+- **Fix**: Export generation now correctly handles `character.scenario` injection targets for Lorebook, Events, and Scoring.
+
 ### v1.6.0 - January 4, 2026
 - **New Feature**: **Script Repository** added to Scripts panel. Includes checked-in presets:
   - *RPG Travel System*: Automated map navigation.
@@ -226,8 +233,15 @@
 - **New Feature**: **Bi-directional Location Linking**. Creating an exit automatically links the return path.
 - **New Feature**: **Alternate Initial Messages**. Define multiple greetings and swipe through them in the Simulator. Index tracked via `state.sim.greetingIndex`.
 - **New Feature**: **Consolidated API Configuration Modal**. Tabbed interface with provider presets (OpenAI, Anthropic, Gemini, Kobold, Chutes, Custom) that auto-fill URLs.
+- **New Feature**: **Generation Settings**. Full control over Temperature, Max Tokens, Context Size, Top P/K, Repetition/Frequency/Presence Penalties.
+- **Improvement**: **Import/Export Terminology Standardized**. Scripts panel now uses "Import/Export". AURA Bundle merged into Export modal.
 - **Fix**: Lorebook Export button now correctly triggers download.
+- **Fix**: Lorebook Shift delete button now works correctly.
+- **Fix**: Removed missing `utils.js` reference (404 error).
+- **Fix**: API key reading now uses consolidated config system.
+- **New Feature**: **Character Book Export**. Character Cards now include associated lorebook entries (those with "Associate with Actors" checked) as embedded `character_book` data.
+- **Fix**: **Character Book Import**. Importing V2 cards now correctly restores embedded character_book entries (with conflict resolution).
 
 ---
 
-*Last updated: January 4, 2026*
+*Last updated: January 5, 2026*
