@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/core/tauri-schema.json",
   "package": {
-    "productName": "Anansi",
-    "version": "1.6.2"
+    "productName": "anansi-desktop",
+    "version": "1.6.3"
   },
   "build": {
     "distDir": "../ui",
