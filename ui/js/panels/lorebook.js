@@ -207,6 +207,10 @@
     container.innerHTML = ''; // Clear previous render
     const state = A.State.get();
 
+    // State for Multi-Select
+    let selectionMode = false;
+    let selectedIds = new Set();
+
     // Ensure Data Structure
     if (!state.weaves) state.weaves = {};
     if (!state.weaves.lorebook) state.weaves.lorebook = { entries: {} };
@@ -227,7 +231,7 @@
       <div class="card-header">
         <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
             <strong>Lorebook</strong>
-            <div style="font-size:10px;">${Object.keys(state.weaves.lorebook.entries).length} entries</div>
+            <div id="lore-count-display" style="font-size:10px;">${Object.keys(state.weaves.lorebook.entries).length} entries</div>
         </div>
       </div>
       <div style="padding:8px; border-bottom:1px solid var(--border-subtle); display:flex; gap:8px;">
@@ -238,9 +242,24 @@
         </div>
       </div>
       <div class="card-body" id="lore-list" style="padding:0; flex:1; overflow-y:auto;"></div>
-      <div class="card-footer" style="display:flex; flex-direction:column; gap:8px;">
-        <button class="btn btn-primary btn-sm" id="btn-add-lore" style="width:100%;">+ Add Entry</button>
-        <button class="btn btn-ghost btn-sm" id="btn-view-script" style="font-size:10px;">View Script →</button>
+      <div class="card-footer" id="lore-footer" style="display:flex; flex-direction:column; gap:8px;">
+        <!-- Standard Actions -->
+        <div id="footer-standard" style="display:flex; flex-direction:column; gap:8px;">
+            <button class="btn btn-primary btn-sm" id="btn-add-lore" style="width:100%;">+ Add Entry</button>
+            <div style="display:flex; gap:8px;">
+                <button class="btn btn-ghost btn-sm" id="btn-select-mode" style="flex:1; font-size:10px;">Select...</button>
+                <button class="btn btn-ghost btn-sm" id="btn-import-lore" style="flex:1; font-size:10px;">Import</button>
+                <button class="btn btn-ghost btn-sm" id="btn-export-lore" style="flex:1; font-size:10px;">Export</button>
+            </div>
+            <button class="btn btn-ghost btn-sm" id="btn-view-script" style="font-size:10px;">View Script →</button>
+            <input type="file" id="file-import-hidden" style="display:none;" accept=".json,.png,.txt">
+        </div>
+
+        <!-- Selection Actions -->
+        <div id="footer-selection" style="display:none; flex-direction:column; gap:8px;">
+            <button class="btn btn-sm" id="btn-del-multi" style="width:100%; background:var(--status-error); color:white;">Delete Selected (0)</button>
+            <button class="btn btn-ghost btn-sm" id="btn-cancel-select" style="width:100%;">Cancel Selection</button>
+        </div>
       </div>
     `;
 
@@ -252,6 +271,317 @@
 
     container.appendChild(listCol);
     container.appendChild(editorCol);
+
+    // --- Event Handlers (Import/Export) ---
+
+    // Import
+    const fileInput = listCol.querySelector('#file-import-hidden');
+
+    listCol.querySelector('#btn-import-lore').onclick = () => {
+      fileInput.value = ''; // Reset
+      fileInput.click();
+    };
+
+    fileInput.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        try {
+          if (A.Converter) {
+            const imported = A.Converter.importLorebook(evt.target.result);
+            const importedKeys = Object.keys(imported);
+            const count = importedKeys.length;
+
+            if (count > 0) {
+              const existingKeys = Object.keys(state.weaves.lorebook.entries);
+              const collisions = importedKeys.filter(k => existingKeys.includes(k));
+
+              if (collisions.length > 0) {
+                // State for decisions: { [id]: 'skip' | 'overwrite' | 'copy' }
+                const decisions = {};
+                collisions.forEach(k => decisions[k] = 'skip'); // Default to safe skip
+
+                // Render Resolver Modal
+                const overlay = document.createElement('div');
+                overlay.style.cssText = `
+                        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+                        background: rgba(0,0,0,0.7); z-index: 10000;
+                        display: flex; align-items: center; justify-content: center;
+                     `;
+
+                const modal = document.createElement('div');
+                modal.style.cssText = `
+                        background: var(--bg-panel); border: 1px solid var(--border-default);
+                        border-radius: var(--radius-lg); width: 600px; max-height: 80vh;
+                        box-shadow: 0 20px 50px rgba(0,0,0,0.5); display: flex; flex-direction: column; overflow: hidden;
+                     `;
+
+                // Header
+                const header = document.createElement('div');
+                header.style.cssText = 'padding:16px; border-bottom:1px solid var(--border-subtle); display:flex; justify-content:space-between; align-items:center;';
+                header.innerHTML = `
+                        <div>
+                            <h3 style="margin:0; font-size:16px; color:var(--text-primary);">Import Conflicts</h3>
+                            <div style="font-size:12px; color:var(--text-secondary); margin-top:4px;">${collisions.length} existing entries found. ${count - collisions.length} new entries ready.</div>
+                        </div>
+                        <div style="font-size:11px; display:flex; gap:8px;">
+                            <span style="color:var(--text-muted);">Set All:</span>
+                            <a href="#" id="bulk-overwrite" style="color:var(--status-warning);">Overwrite</a>
+                            <a href="#" id="bulk-copy" style="color:var(--accent-primary);">Copy</a>
+                            <a href="#" id="bulk-skip" style="color:var(--text-muted);">Skip</a>
+                        </div>
+                     `;
+
+                // List
+                const listBody = document.createElement('div');
+                listBody.style.cssText = 'flex:1; overflow-y:auto; padding:0; background:var(--bg-base);';
+
+                const renderConflictList = () => {
+                  listBody.innerHTML = collisions.map(id => {
+                    const entry = imported[id];
+                    const action = decisions[id];
+                    let actionColor = 'var(--text-muted)';
+                    if (action === 'overwrite') actionColor = 'var(--status-warning)';
+                    if (action === 'copy') actionColor = 'var(--accent-primary)';
+
+                    return `
+                                <div class="conflict-row" data-id="${id}" style="display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border-bottom:1px solid var(--border-subtle); gap:12px;">
+                                    <div style="flex:1; overflow:hidden;">
+                                        <div style="font-weight:bold; font-size:13px; color:var(--text-primary); white-space:nowrap; text-overflow:ellipsis;">${entry.title || 'Untitled'}</div>
+                                        <div style="font-size:10px; color:var(--text-muted); font-family:var(--font-mono);">${id}</div>
+                                    </div>
+                                    <div style="display:flex; gap:2px; background:var(--bg-elevated); padding:2px; border-radius:4px;">
+                                        ${['overwrite', 'copy', 'skip'].map(act => `
+                                            <button class="btn-conflict-act" data-id="${id}" data-act="${act}" 
+                                                style="
+                                                    padding:4px 8px; font-size:10px; border:none; background:${action === act ? actionColor : 'transparent'}; 
+                                                    color:${action === act ? (act === 'overwrite' ? 'var(--bg-base)' : 'white') : 'var(--text-muted)'}; 
+                                                    border-radius:2px; cursor:pointer; font-weight:bold;
+                                                ">
+                                                ${act.charAt(0).toUpperCase() + act.slice(1)}
+                                            </button>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                             `;
+                  }).join('');
+
+                  // Re-bind row events
+                  listBody.querySelectorAll('.btn-conflict-act').forEach(btn => {
+                    btn.onclick = (e) => {
+                      decisions[btn.dataset.id] = btn.dataset.act;
+                      renderConflictList(); // Re-render to update toggle states
+                    };
+                  });
+                };
+
+                renderConflictList();
+
+                // Footer
+                const footer = document.createElement('div');
+                footer.style.cssText = 'padding:16px; border-top:1px solid var(--border-subtle); display:flex; justify-content:flex-end; gap:8px;';
+                footer.innerHTML = `
+                        <button id="btn-resolve-cancel" class="btn btn-ghost">Cancel Import</button>
+                        <button id="btn-resolve-apply" class="btn btn-primary">Complete Import</button>
+                     `;
+
+                modal.appendChild(header);
+                modal.appendChild(listBody);
+                modal.appendChild(footer);
+                overlay.appendChild(modal);
+                document.body.appendChild(overlay);
+
+                // Bulk Actions
+                const setAll = (act) => {
+                  collisions.forEach(k => decisions[k] = act);
+                  renderConflictList();
+                };
+                modal.querySelector('#bulk-overwrite').onclick = (e) => { e.preventDefault(); setAll('overwrite'); };
+                modal.querySelector('#bulk-copy').onclick = (e) => { e.preventDefault(); setAll('copy'); };
+                modal.querySelector('#bulk-skip').onclick = (e) => { e.preventDefault(); setAll('skip'); };
+
+                // Cancel
+                modal.querySelector('#btn-resolve-cancel').onclick = () => {
+                  overlay.remove();
+                  if (A.UI.Toast) A.UI.Toast.show('Import cancelled.', 'info');
+                };
+
+                // Apply
+                modal.querySelector('#btn-resolve-apply').onclick = () => {
+                  let added = 0;
+                  let updated = 0;
+                  let skipped = 0;
+
+                  // 1. Process Safe Entries (Non-collisions)
+                  importedKeys.forEach(k => {
+                    if (!collisions.includes(k)) {
+                      state.weaves.lorebook.entries[k] = imported[k];
+                      added++;
+                    }
+                  });
+
+                  // 2. Process Conflicts based on decisions
+                  collisions.forEach(k => {
+                    const act = decisions[k];
+                    const entry = imported[k];
+
+                    if (act === 'overwrite') {
+                      state.weaves.lorebook.entries[k] = entry;
+                      updated++;
+                    } else if (act === 'copy') {
+                      const newId = A.ProjectDB.generateId();
+                      entry.id = newId;
+                      entry.uuid = A.ProjectDB.generateId();
+                      state.weaves.lorebook.entries[newId] = entry;
+                      added++;
+                    } else {
+                      skipped++;
+                    }
+                  });
+
+                  finalizeImport(`Import Complete: ${added} added, ${updated} updated, ${skipped} skipped.`);
+                  overlay.remove();
+                };
+
+                return; // Wait for user interaction
+              }
+
+              // Default path (No Collisions)
+              Object.assign(state.weaves.lorebook.entries, imported);
+              finalizeImport(`Imported ${count} entries.`);
+            } else {
+              if (A.UI.Toast) A.UI.Toast.show('No valid entries found in file.', 'warning');
+            }
+          } else {
+            alert('Converter module missing!');
+          }
+        } catch (err) {
+          console.error(err);
+          if (A.UI.Toast) A.UI.Toast.show('Import failed: ' + err.message, 'error');
+        }
+      };
+
+      // Helper to finish up
+      const finalizeImport = (msg) => {
+        A.State.notify();
+        renderList();
+        if (A.UI.Toast) A.UI.Toast.show(msg, 'success');
+      };
+
+      reader.readAsText(file);
+    };
+
+    // Export
+    // Export
+    // Export
+    listCol.querySelector('#btn-export-lore').onclick = () => {
+      // Create Format Selection Modal
+      const overlay = document.createElement('div');
+      overlay.style.cssText = `
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7); z-index: 10000;
+            display: flex; align-items: center; justify-content: center;
+        `;
+
+      const modal = document.createElement('div');
+      modal.className = 'card';
+      modal.style.cssText = `
+            width: 300px; padding: 16px; display: flex; flex-direction: column; gap: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5); border: 1px solid var(--border-default);
+        `;
+
+      modal.innerHTML = `
+            <h3 style="margin:0; font-size:16px;">Export Lorebook</h3>
+            <div style="font-size:12px; color:var(--text-secondary);">Select file format:</div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+                <button class="btn btn-secondary" id="exp-json">
+                    <div style="font-weight:bold;">JSON (.json)</div>
+                    <div style="font-size:10px; opacity:0.7;">Standard Anansi format</div>
+                </button>
+                <button class="btn btn-secondary" id="exp-txt">
+                    <div style="font-weight:bold;">Text (.txt)</div>
+                    <div style="font-size:10px; opacity:0.7;">Mobile/Tablet compatible</div>
+                </button>
+            </div>
+            <button class="btn btn-ghost btn-sm" id="exp-cancel" style="margin-top:4px;">Cancel</button>
+        `;
+
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+
+      const performExport = (ext) => {
+        const entries = state.weaves.lorebook.entries;
+        const blob = new Blob([JSON.stringify({ entries: entries }, null, 2)], { type: 'application/json' }); // Mime always JSON
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `lorebook_export_${new Date().getTime()}.${ext}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        overlay.remove();
+        if (A.UI.Toast) A.UI.Toast.show(`Lorebook exported as .${ext}`, 'success');
+      };
+
+      modal.querySelector('#exp-json').onclick = () => performExport('json');
+      modal.querySelector('#exp-txt').onclick = () => performExport('txt');
+      modal.querySelector('#exp-cancel').onclick = () => overlay.remove();
+    };
+
+    // --- Multi-Select Handlers ---
+    const updateFooterState = () => {
+      const std = listCol.querySelector('#footer-standard');
+      const sel = listCol.querySelector('#footer-selection');
+      if (selectionMode) {
+        std.style.display = 'none';
+        sel.style.display = 'flex';
+        sel.querySelector('#btn-del-multi').textContent = `Delete Selected (${selectedIds.size})`;
+        sel.querySelector('#btn-del-multi').disabled = selectedIds.size === 0;
+        sel.querySelector('#btn-del-multi').style.opacity = selectedIds.size === 0 ? '0.5' : '1';
+      } else {
+        std.style.display = 'flex';
+        sel.style.display = 'none';
+      }
+    };
+
+    listCol.querySelector('#btn-select-mode').onclick = () => {
+      selectionMode = true;
+      selectedIds.clear();
+      updateFooterState();
+      renderList();
+    };
+
+    listCol.querySelector('#btn-cancel-select').onclick = () => {
+      selectionMode = false;
+      selectedIds.clear();
+      updateFooterState();
+      renderList();
+    };
+
+    listCol.querySelector('#btn-del-multi').onclick = () => {
+      if (selectedIds.size === 0) return;
+      if (confirm(`Delete ${selectedIds.size} entries? This cannot be undone.`)) {
+        let count = 0;
+        selectedIds.forEach(id => {
+          if (state.weaves.lorebook.entries[id]) {
+            delete state.weaves.lorebook.entries[id];
+            count++;
+          }
+        });
+        selectionMode = false;
+        selectedIds.clear();
+        A.State.notify();
+        if (A.UI.Toast) A.UI.Toast.show(`Deleted ${count} entries.`, 'success');
+
+        // Re-renders implicitly via State notify, but we ensure mode reset
+        updateFooterState();
+        renderList();
+        renderEditor(); // Clear editor if currentId was deleted
+      }
+    };
 
     // Handle Context
     if (context && context.createNew) {
@@ -268,6 +598,10 @@
       listBody.innerHTML = '';
 
       const entries = Object.values(state.weaves.lorebook.entries);
+
+      // Update Count
+      const countDisplay = listCol.querySelector('#lore-count-display');
+      if (countDisplay) countDisplay.textContent = entries.length + ' entries';
 
       // Sort: Priority DESC, Title ASC
       entries.sort((a, b) => {
@@ -295,9 +629,15 @@
         row.style.borderBottom = '1px solid var(--border-subtle)';
         row.style.cursor = 'pointer';
 
-        if (e.id === currentId) {
+        if (e.id === currentId && !selectionMode) {
           row.style.backgroundColor = 'var(--bg-surface)';
           row.style.borderLeft = '3px solid var(--accent-primary)';
+        }
+
+        // Selection Styles
+        if (selectionMode && selectedIds.has(e.id)) {
+          row.style.backgroundColor = 'rgba(218, 165, 32, 0.1)'; // Gold tint
+          row.style.borderColor = 'var(--accent-primary)';
         }
 
         const enabled = e.enabled !== false;
@@ -311,20 +651,30 @@
         row.innerHTML = `
           <div style="display:flex; justify-content:space-between; align-items:center;">
              <span style="font-weight:bold; font-size:12px; display:flex; align-items:center; ${!enabled ? 'color:var(--text-muted); text-decoration:line-through;' : ''}">
+                ${selectionMode ?
+            `<input type="checkbox" style="margin-right:8px; pointer-events:none;" ${selectedIds.has(e.id) ? 'checked' : ''}>`
+            : ''}
                 ${hasLogic ? '<span style="color:var(--accent-primary); margin-right:4px;">⚡</span>' : ''}${e.title || 'Untitled'}
              </span>
              <span style="font-size:10px; padding:2px 4px; border-radius:4px; background:var(--bg-base); color:var(--text-muted);">${e.category || 'uncategorized'}</span>
           </div>
-          <div style="font-size:10px; color:var(--text-muted); overflow:hidden; white-space:nowrap; text-overflow:ellipsis;">
+          <div style="font-size:10px; color:var(--text-muted); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; margin-left:${selectionMode ? '24px' : '0'};">
             ${(e.keywords || []).join(', ')}
           </div>
         `;
 
         row.onclick = () => {
-          currentId = e.id;
-          editingShiftIndex = null; // Reset sub-edit state on entry switch
-          renderList();
-          renderEditor();
+          if (selectionMode) {
+            if (selectedIds.has(e.id)) selectedIds.delete(e.id);
+            else selectedIds.add(e.id);
+            updateFooterState();
+            renderList(); // Re-render to update checks
+          } else {
+            currentId = e.id;
+            editingShiftIndex = null;
+            renderList();
+            renderEditor();
+          }
         };
         listBody.appendChild(row);
       });
@@ -755,7 +1105,16 @@
 
       // === ENTITY GATES ===
       const entityContent = document.createElement('div');
-      entityContent.innerHTML = `<div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;">Restrict this entry to fire only when specific actors are present.</div>`;
+      entityContent.innerHTML = `
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;">
+          <strong>Restrict to Actors:</strong> This entry only fires when selected actors are <em>mentioned</em> in recent chat messages.
+        </div>
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:12px;padding:8px;background:var(--bg-elevated);border-radius:var(--radius-sm);border-left:3px solid var(--accent-primary);">
+          <strong>How detection works:</strong> AURA scans chat for actor <strong>names</strong> and <strong>aliases</strong>. 
+          Pronouns (he/she/they) are resolved to the last mentioned actor of that gender.
+          <br><em>Example: If "Aria" is selected, the entry fires when "aria", her aliases, or "she" (after mentioning Aria) appear in chat.</em>
+        </div>
+      `;
 
       // Get actors from state
       const actors = state.nodes?.actors?.items ? Object.values(state.nodes.actors.items) : [];
@@ -887,8 +1246,9 @@
         };
         form.appendChild(head);
 
-        // Fields
-        form.innerHTML += `
+        // Fields (create as DOM elements to avoid destroying event handlers)
+        const fieldsDiv = document.createElement('div');
+        fieldsDiv.innerHTML = `
            <div class="l-col">
               <label class="l-lab">Trigger Keys (comma)</label>
               <input class="input" id="inp-sh-keys" value="${(shift.keywords || []).join(', ')}">
@@ -898,12 +1258,13 @@
               <textarea class="input" id="inp-sh-content" style="height:60px; font-family:var(--font-mono); resize:none;">${shift.content || ''}</textarea>
            </div>
         `;
+        form.appendChild(fieldsDiv);
 
-        form.querySelector('#inp-sh-keys').onchange = (e) => {
+        fieldsDiv.querySelector('#inp-sh-keys').onchange = (e) => {
           shift.keywords = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
           A.State.notify();
         };
-        form.querySelector('#inp-sh-content').onchange = (e) => {
+        fieldsDiv.querySelector('#inp-sh-content').onchange = (e) => {
           shift.content = e.target.value;
           A.State.notify();
         };
@@ -998,6 +1359,7 @@
       };
       currentId = id;
       A.State.notify();
+      if (A.UI.Toast) A.UI.Toast.show('New lorebook entry created', 'success');
       renderList();
       renderEditor();
     };
