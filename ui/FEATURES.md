@@ -40,6 +40,7 @@
 - Character name, personality, scenario editing
 - Example dialogue management
 - **First Message Configuration (with token count)**
+- **Alternate Initial Messages (Swipe in Simulator)**
 - **Portrait Upload & Preview**
 - Token counting for all fields
 
@@ -84,6 +85,8 @@
 - Entry categories
 - Shift/append logic for dynamic content
 - Token counting per entry
+- **Import/Export support (JSON)**
+- **Granular Import Conflict Resolution (Overwrite/Copy/Skip)**
 
 ### Scoring Panel
 - Stat block definitions (numeric ranges)
@@ -132,7 +135,7 @@
 - **TRACE**: Script execution trace
 - **STATS**: Scoring stat values
 - **LOCS**: Location map
-- **CFG**: LLM provider/model config, API key manager
+- **CFG**: **Consolidated API Configuration** (Provider presets, auto-filled URLs)
 
 **Advanced Features:**
 - Per-message injection inspector (ℹ️ button)
@@ -147,6 +150,11 @@
 - Enable/disable scripts
 - Script ordering
 - Auto-complete & linting
+- **Script Repository (Built-in presets)**
+  - RPG Travel System
+  - Day/Night Cycle
+  - Inventory System
+  - API Reference / Cheatsheet
 
 ---
 
@@ -175,6 +183,7 @@
 ### Locations Panel
 - World map location definitions
 - Exit/connection mapping
+- **Bi-directional exit auto-linking**
 - Location descriptions
 
 ### Stats Panel
@@ -205,6 +214,27 @@
 - Responsive layout
 - Project picker with recent projects
 
+## 📜 Change Log
+
+### v1.6.0 - January 4, 2026
+- **New Feature**: **Script Repository** added to Scripts panel. Includes checked-in presets:
+  - *RPG Travel System*: Automated map navigation.
+  - *Inventory System*: Basic item tracking.
+  - *Day/Night Cycle*: Time tracking.
+  - *API Reference*: Internal scripting cheatsheet.
+- **New Feature**: **Lorebook Import/Export** (JSON) with **Conflict Resolver** (Overwrite/Copy/Skip).
+- **New Feature**: **Bi-directional Location Linking**. Creating an exit automatically links the return path.
+- **New Feature**: **Alternate Initial Messages**. Define multiple greetings and swipe through them in the Simulator. Index tracked via `state.sim.greetingIndex`.
+- **New Feature**: **Consolidated API Configuration Modal**. Tabbed interface with provider presets (OpenAI, Anthropic, Gemini, Kobold, Chutes, Custom) that auto-fill URLs.
+- **New Feature**: **Generation Settings**. Full control over Temperature, Max Tokens, Context Size, Top P/K, Repetition/Frequency/Presence Penalties.
+- **Improvement**: **Import/Export Terminology Standardized**. Scripts panel now uses "Import/Export". AURA Bundle merged into Export modal.
+- **Fix**: Lorebook Export button now correctly triggers download.
+- **Fix**: Lorebook Shift delete button now works correctly.
+- **Fix**: Removed missing `utils.js` reference (404 error).
+- **Fix**: API key reading now uses consolidated config system.
+- **New Feature**: **Character Book Export**. Character Cards now include associated lorebook entries (those with "Associate with Actors" checked) as embedded `character_book` data.
+- **Fix**: **Character Book Import**. Importing V2 cards now correctly restores embedded character_book entries (with conflict resolution).
+
 ---
 
-*Last updated: January 3, 2026 (v1.5.0)*
+*Last updated: January 4, 2026*
