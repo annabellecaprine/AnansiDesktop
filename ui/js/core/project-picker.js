@@ -70,7 +70,7 @@
             }
 
             // Show modal
-            A.UI.Modal.show({
+            ProjectPicker.overlay = A.UI.Modal.show({
                 title: '📁 Projects',
                 content: content,
                 width: 520
@@ -129,26 +129,7 @@
                 }
             });
 
-            // Open buttons
-            container.querySelectorAll('.pp-open').forEach(btn => {
-                btn.addEventListener('click', async () => {
-                    await ProjectPicker._openProject(btn.dataset.id);
-                });
-            });
 
-            // Download buttons
-            container.querySelectorAll('.pp-download').forEach(btn => {
-                btn.addEventListener('click', async () => {
-                    await A.ProjectDB.exportProject(btn.dataset.id);
-                });
-            });
-
-            // Delete buttons
-            container.querySelectorAll('.pp-delete').forEach(btn => {
-                btn.addEventListener('click', async () => {
-                    await ProjectPicker._deleteProject(btn.dataset.id);
-                });
-            });
         },
 
         /**
@@ -211,13 +192,19 @@
          * Bind events for list items (Open/Delete buttons)
          */
         _bindListEvents: function (container) {
-            container.querySelectorAll('#pp-open').forEach(btn => {
+            container.querySelectorAll('.pp-open').forEach(btn => {
                 btn.addEventListener('click', async () => {
                     await ProjectPicker._openProject(btn.dataset.id);
                 });
             });
 
-            container.querySelectorAll('#pp-delete').forEach(btn => {
+            container.querySelectorAll('.pp-download').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    await A.ProjectDB.exportProject(btn.dataset.id);
+                });
+            });
+
+            container.querySelectorAll('.pp-delete').forEach(btn => {
                 btn.addEventListener('click', async () => {
                     await ProjectPicker._deleteProject(btn.dataset.id);
                 });
@@ -465,7 +452,7 @@
                     A.State.load(data);
 
                     // Refresh
-                    A.UI.Modal.close();
+                    if (ProjectPicker.overlay) A.UI.Modal.hide(ProjectPicker.overlay);
                     A.UI.refresh();
 
                     const action = existing && data.meta.id === existing.id ? 'Updated' : 'Imported';
@@ -473,7 +460,15 @@
 
                 } catch (err) {
                     console.error('[ProjectPicker] Import failed:', err);
-                    A.UI.Toast.show('Failed to import project', 'error');
+                    let msg = 'Failed to import project';
+                    if (err instanceof SyntaxError) {
+                        msg = 'Import failed: Invalid JSON file';
+                    } else if (err.message) {
+                        msg = `Import failed: ${err.message}`;
+                    }
+                    if (A.UI && A.UI.Toast) {
+                        A.UI.Toast.show(msg, 'error');
+                    }
                 }
             };
             reader.readAsText(file);

@@ -11,6 +11,10 @@
     let activeTab = 'profile'; // profile, appearance, cues
     let searchTerm = ''; // Search Filter
 
+    // State for Multi-Select
+    let selectionMode = false;
+    let selectedIds = new Set();
+
     // --- Constants ---
     // AURA Tag Systems (aligned with AURA Black Magic Edition)
     const PULSE_TAGS = ['joy', 'sadness', 'anger', 'fear', 'romance', 'neutral', 'confusion', 'positive', 'negative'];
@@ -23,6 +27,72 @@
         if (!str) return '';
         return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
+
+    // --- Gallery Lightbox ---
+    function openLightbox(images, currentIndex, showNsfw) {
+        // Filter images based on NSFW setting
+        const visibleImages = showNsfw ? images : images.filter(img => img.folder !== 'nsfw');
+        if (visibleImages.length === 0) return;
+
+        // Find the correct index in filtered array
+        let idx = currentIndex;
+        if (idx >= visibleImages.length) idx = 0;
+
+        // Create lightbox overlay
+        const lightbox = document.createElement('div');
+        lightbox.className = 'gallery-lightbox';
+
+        function renderImage() {
+            const img = visibleImages[idx];
+            lightbox.innerHTML = `
+                <div class="gallery-lightbox-content">
+                    <button class="gallery-lightbox-close" title="Close (Esc)">×</button>
+                    ${visibleImages.length > 1 ? `
+                        <button class="gallery-lightbox-nav prev" ${idx === 0 ? 'disabled' : ''} title="Previous (←)">‹</button>
+                        <button class="gallery-lightbox-nav next" ${idx === visibleImages.length - 1 ? 'disabled' : ''} title="Next (→)">›</button>
+                    ` : ''}
+                    <img src="${img.data}" class="gallery-lightbox-image" alt="${img.caption || 'Gallery image'}">
+                    ${visibleImages.length > 1 ? `
+                        <div class="gallery-lightbox-counter">${idx + 1} / ${visibleImages.length}</div>
+                    ` : ''}
+                    ${img.caption ? `<div class="gallery-lightbox-caption">${img.caption}</div>` : ''}
+                </div>
+            `;
+
+            // Wire close button
+            lightbox.querySelector('.gallery-lightbox-close').onclick = closeLightbox;
+
+            // Wire navigation
+            const prevBtn = lightbox.querySelector('.gallery-lightbox-nav.prev');
+            const nextBtn = lightbox.querySelector('.gallery-lightbox-nav.next');
+            if (prevBtn) prevBtn.onclick = () => { if (idx > 0) { idx--; renderImage(); } };
+            if (nextBtn) nextBtn.onclick = () => { if (idx < visibleImages.length - 1) { idx++; renderImage(); } };
+
+            // Click backdrop to close
+            lightbox.querySelector('.gallery-lightbox-content').onclick = (e) => e.stopPropagation();
+        }
+
+        function closeLightbox() {
+            document.removeEventListener('keydown', handleKeydown);
+            lightbox.remove();
+        }
+
+        function handleKeydown(e) {
+            if (e.key === 'Escape') closeLightbox();
+            if (e.key === 'ArrowLeft' && idx > 0) { idx--; renderImage(); }
+            if (e.key === 'ArrowRight' && idx < visibleImages.length - 1) { idx++; renderImage(); }
+        }
+
+        // Background click closes
+        lightbox.onclick = closeLightbox;
+
+        // Keyboard navigation
+        document.addEventListener('keydown', handleKeydown);
+
+        renderImage();
+        document.body.appendChild(lightbox);
+    }
+
 
     // --- Voice Sync Helpers ---
     function syncActorToVoices(actorId, actorName) {
@@ -79,10 +149,24 @@
         listCol.innerHTML = `
       <div class="card-header" style="flex-wrap:wrap; gap:8px;">
         <strong style="flex:1;">Actors</strong>
-        <button class="btn btn-secondary btn-sm" id="btn-add-actor">+ New</button>
+        <div style="flex:1;"></div>
+        <div id="header-actions" style="display:flex; gap:4px;">
+            <button class="btn btn-secondary btn-sm" id="btn-add-actor">+ New</button>
+            <button class="btn btn-ghost btn-sm" id="btn-select-mode">Select</button>
+        </div>
+        
+        <!-- Selection Actions Header (Alternate) -->
+        <div id="header-selection" style="display:none; gap:4px; align-items:center; width:100%;">
+             <span id="sel-count" style="font-size:11px; font-weight:bold; flex:1;">0 Selected</span>
+             <button class="btn btn-sm btn-ghost" id="btn-cancel-select">Cancel</button>
+        </div>
+
         <input class="input" id="search-actors" placeholder="Search..." style="width:100%; font-size:12px; height:28px;" value="${searchTerm}">
       </div>
       <div class="card-body" id="actor-list" style="padding:0; flex:1; overflow-y:auto;"></div>
+      <div class="card-footer" id="footer-actions" style="display:none; padding:8px; border-top:1px solid var(--border-subtle);">
+         <button class="btn btn-sm" id="btn-del-multi" style="width:100%; background:var(--status-error); color:white;">Delete Selected</button>
+      </div>
     `;
 
         // ... [Rest of layout identical] ...
@@ -157,6 +241,71 @@
             refreshList();
         };
 
+        // --- Multi-Select Handlers ---
+        const updateHeaderState = () => {
+            const hId = listCol.querySelector('#header-actions');
+            const hSel = listCol.querySelector('#header-selection');
+            const footer = listCol.querySelector('#footer-actions');
+            const addBtn = listCol.querySelector('#btn-add-actor');
+
+            if (selectionMode) {
+                hId.style.display = 'none';
+                hSel.style.display = 'flex';
+                footer.style.display = 'block';
+                listCol.querySelector('#sel-count').textContent = `${selectedIds.size} Selected`;
+                listCol.querySelector('#btn-del-multi').disabled = selectedIds.size === 0;
+                listCol.querySelector('#btn-del-multi').style.opacity = selectedIds.size === 0 ? '0.5' : '1';
+                //search is still visible
+            } else {
+                hId.style.display = 'flex';
+                hSel.style.display = 'none';
+                footer.style.display = 'none';
+            }
+        };
+
+        listCol.querySelector('#btn-select-mode').onclick = () => {
+            selectionMode = true;
+            selectedIds.clear();
+            updateHeaderState();
+            refreshList();
+        };
+
+        listCol.querySelector('#btn-cancel-select').onclick = () => {
+            selectionMode = false;
+            selectedIds.clear();
+            updateHeaderState();
+            refreshList();
+        };
+
+        listCol.querySelector('#btn-del-multi').onclick = () => {
+            if (selectedIds.size === 0) return;
+            if (confirm(`Delete ${selectedIds.size} actors? This cannot be undone.`)) {
+                let count = 0;
+                const state = A.State.get();
+                selectedIds.forEach(id => {
+                    if (state.nodes.actors.items[id]) {
+                        delete state.nodes.actors.items[id];
+                        count++;
+                    }
+                });
+                selectionMode = false;
+                selectedIds.clear();
+                A.State.notify(); // Implicitly re-renders logic via main loop if strictly bound, but here we manually refresh
+
+                if (A.UI.Toast) A.UI.Toast.show(`Deleted ${count} actors.`, 'success');
+                updateHeaderState();
+                refreshList();
+
+                // Clear editor if current was deleted
+                if (!state.nodes.actors.items[currentId]) {
+                    currentId = null;
+                    nameInput.value = '';
+                    nameInput.disabled = true;
+                    content.innerHTML = '<div style="padding:40px; text-align:center; color:gray;">Select or Create an Actor</div>';
+                }
+            }
+        };
+
         function refreshList() {
             const state = A.State.get();
             if (!state) return;
@@ -187,13 +336,38 @@
                 item.style.cursor = 'pointer';
                 item.style.fontSize = '13px';
 
-                if (actor.id === currentId) {
+                if (actor.id === currentId && !selectionMode) {
                     item.style.backgroundColor = 'var(--bg-surface)';
                     item.style.borderLeft = '3px solid var(--accent-primary)';
                 }
 
-                item.innerHTML = `<strong>${actor.name || 'Unnamed'}</strong>`;
-                item.onclick = () => selectActor(actor.id);
+                // Selection Styles
+                if (selectionMode && selectedIds.has(actor.id)) {
+                    item.style.backgroundColor = 'rgba(218, 165, 32, 0.1)';
+                    item.style.borderColor = 'var(--accent-primary)';
+                    // Force border left logic override or standard border logic
+                    item.style.borderLeft = '3px solid var(--accent-primary)';
+                }
+
+                item.innerHTML = `
+                    <div style="display:flex; align-items:center;">
+                        ${selectionMode ?
+                        `<input type="checkbox" style="margin-right:8px; pointer-events:none;" ${selectedIds.has(actor.id) ? 'checked' : ''}>`
+                        : ''}
+                        <strong>${actor.name || 'Unnamed'}</strong>
+                    </div>
+                `;
+
+                item.onclick = () => {
+                    if (selectionMode) {
+                        if (selectedIds.has(actor.id)) selectedIds.delete(actor.id);
+                        else selectedIds.add(actor.id);
+                        updateHeaderState();
+                        refreshList();
+                    } else {
+                        selectActor(actor.id);
+                    }
+                };
                 listBody.appendChild(item);
             });
         }
@@ -399,9 +573,26 @@
                         };
                     }
 
+                    // Wire primary image click to open lightbox
+                    const primaryContainer = galleryCard.querySelector('#gallery-primary');
+                    if (primaryContainer) {
+                        const primaryImgEl = primaryContainer.querySelector('img');
+                        if (primaryImgEl) {
+                            primaryImgEl.onclick = () => {
+                                const primaryImg = gallery.images.find(img => img.id === gallery.primary) || gallery.images[0];
+                                if (primaryImg) {
+                                    const visibleImages = gallery.showNsfw ? gallery.images : gallery.images.filter(i => i.folder !== 'nsfw');
+                                    const idx = visibleImages.findIndex(i => i.id === primaryImg.id);
+                                    if (idx !== -1) openLightbox(visibleImages, idx, gallery.showNsfw);
+                                }
+                            };
+                        }
+                    }
+
                     // Wire Add button
                     const addBtn = galleryCard.querySelector('#btn-gallery-add');
                     const fileInput = galleryCard.querySelector('#gallery-input');
+
                     addBtn.onclick = () => fileInput.click();
                     fileInput.onchange = (e) => {
                         const file = e.target.files[0];
@@ -429,10 +620,25 @@
                         reader.readAsDataURL(file);
                     };
 
-                    // Wire thumbnail clicks (context menu)
+                    // Wire thumbnail clicks (left-click: lightbox, right-click: context menu)
                     galleryCard.querySelectorAll('.gallery-thumb').forEach(thumb => {
+                        // Left-click opens lightbox
                         thumb.onclick = (e) => {
-                            e.stopPropagation(); // Prevent immediate close
+                            e.stopPropagation();
+                            const imgId = thumb.dataset.id;
+                            const visibleImages = currentFolder === 'all'
+                                ? gallery.images.filter(img => gallery.showNsfw || img.folder !== 'nsfw')
+                                : gallery.images.filter(img => img.folder === currentFolder && (gallery.showNsfw || img.folder !== 'nsfw'));
+                            const idx = visibleImages.findIndex(i => i.id === imgId);
+                            if (idx !== -1) {
+                                openLightbox(visibleImages, idx, gallery.showNsfw);
+                            }
+                        };
+
+                        // Right-click shows context menu
+                        thumb.oncontextmenu = (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
                             const imgId = thumb.dataset.id;
                             const img = gallery.images.find(i => i.id === imgId);
                             if (!img) return;
@@ -448,6 +654,7 @@
                                 border-radius: var(--radius-md); padding: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
                             `;
                             menu.innerHTML = `
+                                <button class="btn btn-ghost btn-sm" style="width: 100%; text-align: left;" data-action="view">🔍 View Full Size</button>
                                 <button class="btn btn-ghost btn-sm" style="width: 100%; text-align: left;" data-action="primary">⭐ Set as Primary</button>
                                 <button class="btn btn-ghost btn-sm" style="width: 100%; text-align: left;" data-action="toggle-folder">
                                     ${img.folder === 'nsfw' ? '🔓 Move to SFW' : '🔒 Move to NSFW'}
@@ -455,8 +662,8 @@
                                 <hr style="border: none; border-top: 1px solid var(--border-subtle); margin: 4px 0;">
                                 <button class="btn btn-ghost btn-sm" style="width: 100%; text-align: left; color: var(--status-error);" data-action="delete">🗑️ Delete</button>
                             `;
-                            menu.style.left = `${thumb.getBoundingClientRect().left}px`;
-                            menu.style.top = `${thumb.getBoundingClientRect().bottom + 4}px`;
+                            menu.style.left = `${e.clientX}px`;
+                            menu.style.top = `${e.clientY}px`;
                             document.body.appendChild(menu);
 
                             const closeMenu = () => menu.remove();
@@ -469,7 +676,11 @@
                                 btn.onclick = (ev) => {
                                     ev.stopPropagation();
                                     const action = btn.dataset.action;
-                                    if (action === 'primary') {
+                                    if (action === 'view') {
+                                        const visibleImages = gallery.showNsfw ? gallery.images : gallery.images.filter(i => i.folder !== 'nsfw');
+                                        const idx = visibleImages.findIndex(i => i.id === imgId);
+                                        if (idx !== -1) openLightbox(visibleImages, idx, gallery.showNsfw);
+                                    } else if (action === 'primary') {
                                         gallery.primary = imgId;
                                     } else if (action === 'toggle-folder') {
                                         img.folder = img.folder === 'nsfw' ? 'sfw' : 'nsfw';
@@ -500,7 +711,7 @@
                             const seed = state.seed || {};
                             const response = await fetch(primary.data);
                             const blob = await response.blob();
-                            const cardData = A.CardEncoder.actorToCard(actor, seed);
+                            const cardData = A.CardEncoder.actorToCard(actor, seed, state);
                             const cardPng = await A.CardEncoder.embed(blob, cardData);
                             const url = URL.createObjectURL(cardPng);
                             const a = document.createElement('a');
@@ -522,42 +733,277 @@
                     importInput.onchange = async (e) => {
                         const file = e.target.files[0];
                         if (!file) return;
-                        try {
-                            const cardData = await A.CardEncoder.extract(file);
-                            if (!cardData) {
-                                if (A.UI?.Toast) A.UI.Toast.show('No Character Card data found', 'warning');
-                                return;
-                            }
-                            const imported = A.CardEncoder.cardToActor(cardData);
-                            actor.name = imported.name || actor.name;
-                            actor.tags = imported.tags || actor.tags;
-                            actor.notes = imported.notes || actor.notes;
-                            actor.gender = imported.gender || actor.gender;
-                            actor.aliases = imported.aliases || actor.aliases;
-                            actor.traits = { ...actor.traits, ...imported.traits };
-                            actor.cardFields = imported.cardFields || actor.cardFields;
 
-                            // Add imported image to gallery
-                            const reader = new FileReader();
-                            reader.onload = (ev) => {
-                                const newImg = {
-                                    id: 'img_' + crypto.randomUUID().split('-')[0],
-                                    folder: 'sfw',
-                                    data: ev.target.result,
-                                    mimeType: 'image/png',
-                                    caption: 'Imported from Character Card',
-                                    timestamp: Date.now()
+                        // --- Confirmation Modal ---
+                        const doImport = async () => {
+                            try {
+                                const cardData = await A.CardEncoder.extract(file);
+                                if (!cardData) {
+                                    if (A.UI?.Toast) A.UI.Toast.show('No Character Card data found', 'warning');
+                                    return;
+                                }
+
+                                const imported = A.CardEncoder.cardToActor(cardData);
+
+                                actor.name = imported.name || actor.name;
+                                actor.tags = imported.tags || actor.tags;
+                                actor.notes = imported.notes || actor.notes;
+                                actor.gender = imported.gender || actor.gender;
+                                actor.aliases = imported.aliases || actor.aliases;
+                                actor.traits = { ...actor.traits, ...imported.traits };
+                                actor.cardFields = imported.cardFields || actor.cardFields;
+
+                                // Add imported image to gallery
+                                const reader = new FileReader();
+                                reader.onload = (ev) => {
+                                    const newImg = {
+                                        id: 'img_' + crypto.randomUUID().split('-')[0],
+                                        folder: 'sfw',
+                                        data: ev.target.result,
+                                        mimeType: 'image/png',
+                                        caption: 'Imported from Character Card',
+                                        timestamp: Date.now()
+                                    };
+                                    gallery.images.push(newImg);
+                                    if (!gallery.primary) gallery.primary = newImg.id;
+
+                                    // --- Lorebook Import Logic ---
+                                    // Check for embedded character_book and handle import with conflict resolution
+                                    const handleLoreImport = () => {
+                                        if (!A.Converter || !A.State.get().weaves?.lorebook) return;
+
+                                        try {
+                                            // A.Converter.importLorebook handles detection heuristics (including checking cardData directly)
+                                            // We pass cardData which might contain data.character_book
+                                            const importedEntries = A.Converter.importLorebook(cardData);
+                                            const importedKeys = Object.keys(importedEntries);
+
+                                            if (importedKeys.length === 0) return; // No lore to import
+
+                                            const state = A.State.get();
+                                            const existingEntries = state.weaves.lorebook.entries;
+                                            const collisions = importedKeys.filter(k => existingEntries[k]);
+
+                                            // Helper to associate entries with this actor
+                                            const linkToActor = (entry) => {
+                                                if (!entry.associatedActors) entry.associatedActors = [];
+                                                if (!entry.associatedActors.includes(actor.id)) {
+                                                    entry.associatedActors.push(actor.id);
+                                                }
+                                            };
+
+                                            // Finalizer
+                                            const finalize = (msg) => {
+                                                A.State.notify();
+                                                if (A.UI?.Toast) A.UI.Toast.show(msg, 'success');
+                                            };
+
+                                            // If no collisions, import directly
+                                            if (collisions.length === 0) {
+                                                let count = 0;
+                                                importedKeys.forEach(k => {
+                                                    const entry = importedEntries[k];
+                                                    linkToActor(entry);
+                                                    existingEntries[k] = entry;
+                                                    count++;
+                                                });
+                                                if (count > 0) finalize(`Imported ${count} associated Lorebook entries.`);
+                                                return;
+                                            }
+
+                                            // --- Conflict Resolution Modal (Adapted from Lorebook.js) ---
+                                            const decisions = {};
+                                            collisions.forEach(k => decisions[k] = 'skip'); // Default to skip
+
+                                            const overlay = document.createElement('div');
+                                            overlay.style.cssText = `
+                                            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+                                            background: rgba(0,0,0,0.6); z-index: 10000;
+                                            display: flex; align-items: center; justify-content: center;
+                                            backdrop-filter: blur(4px);
+                                        `;
+
+                                            const modal = document.createElement('div');
+                                            modal.style.cssText = `
+                                            background: var(--bg-panel); border: 1px solid var(--border-default);
+                                            border-radius: var(--radius-lg); width: 600px; max-height: 80vh;
+                                            box-shadow: 0 20px 50px rgba(0,0,0,0.5); display: flex; flex-direction: column; overflow: hidden;
+                                        `;
+
+                                            // Header
+                                            const header = document.createElement('div');
+                                            header.style.cssText = 'padding:16px; border-bottom:1px solid var(--border-subtle); display:flex; justify-content:space-between; align-items:center;';
+                                            header.innerHTML = `
+                                            <div>
+                                                <h3 style="margin:0; font-size:16px; color:var(--text-primary);">Character Book Conflicts</h3>
+                                                <div style="font-size:12px; color:var(--text-secondary); margin-top:4px;">${collisions.length} existing entries found.</div>
+                                            </div>
+                                            <div style="font-size:11px; display:flex; gap:8px;">
+                                                <span style="color:var(--text-muted);">Set All:</span>
+                                                <a href="#" id="bulk-overwrite" style="color:var(--status-warning);">Overwrite</a>
+                                                <a href="#" id="bulk-copy" style="color:var(--accent-primary);">Copy</a>
+                                                <a href="#" id="bulk-skip" style="color:var(--text-muted);">Skip</a>
+                                            </div>
+                                        `;
+
+                                            // List
+                                            const listBody = document.createElement('div');
+                                            listBody.style.cssText = 'flex:1; overflow-y:auto; padding:0; background:var(--bg-base);';
+
+                                            const renderConflictList = () => {
+                                                listBody.innerHTML = collisions.map(id => {
+                                                    const entry = importedEntries[id];
+                                                    const action = decisions[id];
+                                                    let actionColor = 'var(--text-muted)';
+                                                    if (action === 'overwrite') actionColor = 'var(--status-warning)';
+                                                    if (action === 'copy') actionColor = 'var(--accent-primary)';
+
+                                                    return `
+                                                    <div class="conflict-row" style="display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border-bottom:1px solid var(--border-subtle); gap:12px;">
+                                                        <div style="flex:1; overflow:hidden;">
+                                                            <div style="font-weight:bold; font-size:13px; color:var(--text-primary); white-space:nowrap; text-overflow:ellipsis;">${entry.title || 'Untitled'}</div>
+                                                            <div style="font-size:10px; color:var(--text-muted); font-family:var(--font-mono);">${id}</div>
+                                                        </div>
+                                                        <div style="display:flex; gap:2px; background:var(--bg-elevated); padding:2px; border-radius:4px;">
+                                                            ${['overwrite', 'copy', 'skip'].map(act => `
+                                                                <button class="btn-conflict-act" data-id="${id}" data-act="${act}" 
+                                                                    style="
+                                                                        padding:4px 8px; font-size:10px; border:none; background:${action === act ? actionColor : 'transparent'}; 
+                                                                        color:${action === act ? (act === 'overwrite' ? 'var(--bg-base)' : 'white') : 'var(--text-muted)'}; 
+                                                                        border-radius:2px; cursor:pointer; font-weight:bold;
+                                                                    ">
+                                                                    ${act.charAt(0).toUpperCase() + act.slice(1)}
+                                                                </button>
+                                                            `).join('')}
+                                                        </div>
+                                                    </div>
+                                                `;
+                                                }).join('');
+
+                                                // Re-bind
+                                                listBody.querySelectorAll('.btn-conflict-act').forEach(btn => {
+                                                    btn.onclick = (e) => {
+                                                        decisions[btn.dataset.id] = btn.dataset.act;
+                                                        renderConflictList();
+                                                    };
+                                                });
+                                            };
+
+                                            renderConflictList();
+
+                                            // Footer
+                                            const footer = document.createElement('div');
+                                            footer.style.cssText = 'padding:16px; border-top:1px solid var(--border-subtle); display:flex; justify-content:flex-end; gap:8px;';
+                                            footer.innerHTML = `
+                                            <button id="btn-resolve-cancel" class="btn btn-ghost">Skip Lorebook</button>
+                                            <button id="btn-resolve-apply" class="btn btn-primary">Complete Import</button>
+                                        `;
+
+                                            modal.appendChild(header);
+                                            modal.appendChild(listBody);
+                                            modal.appendChild(footer);
+                                            overlay.appendChild(modal);
+                                            document.body.appendChild(overlay);
+
+                                            // Handlers
+                                            const setAll = (act) => { collisions.forEach(k => decisions[k] = act); renderConflictList(); };
+                                            modal.querySelector('#bulk-overwrite').onclick = (e) => { e.preventDefault(); setAll('overwrite'); };
+                                            modal.querySelector('#bulk-copy').onclick = (e) => { e.preventDefault(); setAll('copy'); };
+                                            modal.querySelector('#bulk-skip').onclick = (e) => { e.preventDefault(); setAll('skip'); };
+
+                                            modal.querySelector('#btn-resolve-cancel').onclick = () => {
+                                                overlay.remove();
+                                                if (A.UI?.Toast) A.UI.Toast.show('Lorebook import skipped.', 'info');
+                                            };
+
+                                            modal.querySelector('#btn-resolve-apply').onclick = () => {
+                                                let added = 0;
+                                                let updated = 0;
+
+                                                // Process non-collisions
+                                                importedKeys.forEach(k => {
+                                                    if (!collisions.includes(k)) {
+                                                        const entry = importedEntries[k];
+                                                        linkToActor(entry);
+                                                        existingEntries[k] = entry;
+                                                        added++;
+                                                    }
+                                                });
+
+                                                // Process conflicts
+                                                collisions.forEach(k => {
+                                                    const act = decisions[k];
+                                                    const entry = importedEntries[k];
+
+                                                    if (act === 'overwrite') {
+                                                        linkToActor(entry);
+                                                        existingEntries[k] = entry;
+                                                        updated++;
+                                                    } else if (act === 'copy') {
+                                                        entry.id = A.ProjectDB.generateId();
+                                                        entry.uuid = A.ProjectDB.generateId();
+                                                        linkToActor(entry);
+                                                        existingEntries[entry.id] = entry;
+                                                        added++;
+                                                    }
+                                                    // skip does nothing
+                                                });
+
+                                                finalize(`Lorebook Import: ${added} added, ${updated} updated.`);
+                                                overlay.remove();
+                                            };
+
+                                        } catch (err) {
+                                            console.error('[Actors] Lorebook Import Error:', err);
+                                        }
+                                    };
+
+                                    handleLoreImport();
+
+                                    A.State.notify();
+                                    renderTab();
                                 };
-                                gallery.images.push(newImg);
-                                if (!gallery.primary) gallery.primary = newImg.id;
-                                A.State.notify();
-                                renderTab();
-                            };
-                            reader.readAsDataURL(file);
-                            if (A.UI?.Toast) A.UI.Toast.show(`Imported: ${imported.name}`, 'success');
-                        } catch (err) {
-                            console.error('[Gallery] Import error:', err);
-                            if (A.UI?.Toast) A.UI.Toast.show('Import failed: ' + err.message, 'error');
+                                reader.readAsDataURL(file);
+                                if (A.UI?.Toast) A.UI.Toast.show(`Imported: ${imported.name}`, 'success');
+                            } catch (err) {
+                                console.error('[Gallery] Import error:', err);
+                                if (A.UI?.Toast) A.UI.Toast.show('Import failed: ' + err.message, 'error');
+                            }
+                        }; // End doImport
+
+                        if (A.UI && A.UI.Modal) {
+                            A.UI.Modal.show({
+                                title: 'Overwrite Character Data?',
+                                content: `
+                            <p style="margin-bottom:12px; color:var(--text-primary);">
+                                You are about to import <strong>${file.name}</strong>. 
+                                This will <strong>overwrite</strong> the current Name, Description, Personality, and other fields.
+                            </p>
+                            <p style="font-size:12px; color:var(--text-muted);">
+                                Existing images will remain in the gallery, but the primary image will be updated.
+                            </p>
+                        `,
+                                actions: [
+                                    {
+                                        label: 'Cancel',
+                                        class: 'btn-ghost',
+                                        onclick: () => true
+                                    },
+                                    {
+                                        label: 'Overwrite',
+                                        class: 'btn-primary',
+                                        onclick: async () => {
+                                            await doImport();
+                                            return true;
+                                        }
+                                    }
+                                ]
+                            });
+                        } else {
+                            // Fallback if modal system missing/limited
+                            if (confirm('Overwrite existing character data with this card?')) {
+                                doImport();
+                            }
                         }
                     };
                 }
@@ -1150,4 +1596,3 @@
     });
 
 })(window.Anansi);
-
