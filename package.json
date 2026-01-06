@@ -1,6 +1,6 @@
 {
     "name": "anansi-desktop",
-    "version": "1.6.3",
+    "version": "1.6.5",
     "description": "Anansi Desktop Wrapper",
     "scripts": {
         "tauri": "tauri"
