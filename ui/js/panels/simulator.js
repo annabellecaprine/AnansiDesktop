@@ -19,7 +19,12 @@
       .replace(/'/g, '&#039;');
   }
 
-  function render(container) {
+  function render(container, context) {
+    // Context override for Lens
+    if (context && context.activeLens) {
+      localStorage.setItem('anansi_sim_active_lens', context.activeLens);
+    }
+
     // Initialize specific SIM state if missing or incomplete
     const _s = A.State.get();
 
@@ -741,10 +746,66 @@
             <button class="btn btn-ghost btn-sm" id="btn-run-all" title="Run Full Simulation Trace">Run Trace</button>
             <button class="btn btn-ghost btn-sm" id="btn-export-story" title="Export as Story">Export</button>
             <button class="btn btn-ghost btn-sm" id="btn-clear-chat" style="color:var(--status-error);">Clear</button>
+            <div style="width:1px; height:16px; background:var(--border-subtle);"></div>
+            <label style="display:flex; align-items:center; gap:4px; font-size:10px; cursor:pointer; user-select:none;">
+               <input type="checkbox" id="chk-show-thinking">
+               <span style="color:var(--text-muted);">Thinking</span>
+            </label>
           </div>
         </div>
         <div class="card-body" id="sim-chat-log" style="flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:8px; background: var(--bg-surface);"></div>
+        
+        <style>
+            /* Thinking Block Styles */
+            .chat-thinking {
+                font-size: 0.85em;
+                margin-bottom: 8px;
+                background: var(--bg-deep);
+                border: 1px solid var(--border-subtle);
+                border-radius: 6px;
+                overflow: hidden;
+            }
+            .chat-thinking summary {
+                padding: 6px 10px;
+                cursor: pointer;
+                color: var(--text-muted);
+                font-weight: 600;
+                user-select: none;
+                background: rgba(0,0,0,0.2);
+            }
+            .chat-thinking summary:hover {
+                color: var(--text-primary);
+            }
+            .thinking-content {
+                padding: 10px;
+                white-space: pre-wrap;
+                color: var(--text-secondary);
+                font-family: var(--font-mono);
+                border-top: 1px solid var(--border-subtle);
+                max-height: 300px;
+                overflow-y: auto;
+                opacity: 0.9;
+            }
+            
+            /* Toggle Visibility Logic */
+            #sim-chat-log:not(.show-thoughts) .chat-thinking {
+                display: none;
+            }
+        </style>
         <div class="card-footer" style="padding:12px;">
+          <!-- Director's Console -->
+          <div class="director-toolbar collapsed" id="director-toolbar">
+              <div style="cursor:pointer; display:flex; align-items:center; gap:4px; font-weight:bold; color:var(--text-muted); font-size:10px;" onclick="document.getElementById('director-toolbar').classList.toggle('collapsed')">
+                  <span>🎬 DIRECTOR</span>
+                  <span style="font-size:8px;">▼</span>
+              </div>
+              
+              <div class="director-group" style="flex:1;">
+                  <span class="director-label">Guide</span>
+                  <input type="text" class="director-input" id="dir-guidance" placeholder="Inject instruction for LLM (appended to system prompt)...">
+              </div>
+          </div>
+
           <div style="display:flex; gap:8px; align-items:flex-end;">
             <textarea class="input" id="sim-input" placeholder="Weave a message... (Shift+Enter for new line)" style="flex:1; resize:none; min-height:36px; max-height:120px; line-height:1.4;" rows="1"></textarea>
             <button class="btn btn-primary" id="sim-send" style="height:36px;">Send</button>
@@ -793,6 +854,26 @@
       const input = chatCol.querySelector('#sim-input');
       const sendBtn = chatCol.querySelector('#sim-send');
 
+      // --- Thinking Toggle Logic ---
+      const chkThoughts = chatCol.querySelector('#chk-show-thinking');
+      if (chkThoughts) {
+        // Load preference
+        const showThoughts = localStorage.getItem('anansi_show_thoughts') === 'true';
+        chkThoughts.checked = showThoughts;
+        if (showThoughts) chatLog.classList.add('show-thoughts');
+
+        chkThoughts.onchange = (e) => {
+          localStorage.setItem('anansi_show_thoughts', e.target.checked);
+          if (e.target.checked) chatLog.classList.add('show-thoughts');
+          else chatLog.classList.remove('show-thoughts');
+        };
+      }
+
+      // --- Director Console Binders ---
+      const dirGuidance = chatCol.querySelector('#dir-guidance');
+
+      // Guidance handler is in sendMessage - no need for oninput since we capture at send time
+
       const refreshChat = () => {
         const state = A.State.get();
         const history = state.sim.history || [];
@@ -834,7 +915,67 @@
             bubble.appendChild(ts);
           }
 
-          // Actions toolbar
+          // --- AVATAR LOGIC ---
+          const isAI = msg.role === 'model';
+          const avatarSize = 40;
+
+          let avatarHtml = '';
+          if (isAI) {
+            // Find Actor
+            const charId = state.character?.char?.id;
+            const actor = (state.nodes && state.nodes.actors && state.nodes.actors.items && charId)
+              ? state.nodes.actors.items[charId]
+              : null;
+
+            // Get Image
+            const imgParams = (actor && actor.gallery && actor.gallery.primary && actor.gallery.images)
+              ? actor.gallery.images.find(i => i.id === actor.gallery.primary)
+              : null;
+            const imgSrc = imgParams ? imgParams.data : null;
+
+            if (imgSrc) {
+              // Determine Pulse Animation
+              const pulse = msg.emotionalSnapshot ? (msg.emotionalSnapshot.pulse || []) : [];
+              let pulseClass = '';
+
+              if (pulse.includes('ANGER') || pulse.includes('RAGE') || pulse.includes('HATE')) pulseClass = 'avatar-pulse-anger';
+              else if (pulse.includes('JOY') || pulse.includes('HAPPY') || pulse.includes('EXCITED')) pulseClass = 'avatar-pulse-joy';
+              else if (pulse.includes('SADNESS') || pulse.includes('GRIEF') || pulse.includes('DEPRESSED')) pulseClass = 'avatar-pulse-sad';
+              else if (pulse.includes('FEAR') || pulse.includes('TERROR') || pulse.includes('ANXIOUS')) pulseClass = 'avatar-pulse-fear';
+              else if (pulse.includes('SURPRISE') || pulse.includes('SHOCK')) pulseClass = 'avatar-pulse-surprise';
+              else if (pulse.includes('LOVE') || pulse.includes('LUST') || pulse.includes('ADORATION')) pulseClass = 'avatar-pulse-love';
+              else if (pulse.includes('RELAXED') || pulse.includes('CALM')) pulseClass = 'avatar-pulse-relaxed';
+
+              avatarHtml = `
+                 <div class="chat-avatar-frame ${pulseClass}" style="
+                    width:${avatarSize}px; height:${avatarSize}px; 
+                    border-radius:50%; overflow:hidden; flex-shrink:0; 
+                    background:var(--bg-base); margin-top:4px;
+                    border:2px solid ${pulseClass ? 'var(--accent-primary)' : 'var(--border-subtle)'};
+                 ">
+                    <img src="${imgSrc}" style="width:100%; height:100%; object-fit:cover;">
+                 </div>
+               `;
+            }
+          }
+
+          // Flex layout for avatar + bubble
+          wrapper.style.display = 'flex';
+          wrapper.style.gap = '12px';
+          wrapper.style.alignItems = 'flex-start';
+          if (!isAI) wrapper.style.flexDirection = 'row-reverse'; // User on Right
+
+          if (isAI && avatarHtml) {
+            const avDiv = document.createElement('div');
+            avDiv.innerHTML = avatarHtml;
+            wrapper.appendChild(avDiv.firstElementChild);
+          } else if (isAI) {
+            // Spacer for AI if no avatar found
+            const spacer = document.createElement('div');
+            spacer.style.width = `${avatarSize}px`;
+            wrapper.appendChild(spacer);
+          }
+
           const actions = document.createElement('div');
           actions.className = 'chat-actions';
           actions.innerHTML = `
@@ -845,8 +986,57 @@
             ${msg.role === 'model' ? '<button class="chat-action-btn" data-action="regenerate" title="Regenerate">🔄</button>' : ''}
             <button class="chat-action-btn danger" data-action="delete" title="Delete">🗑️</button>
           `;
-          wrapper.appendChild(actions);
+
           wrapper.appendChild(bubble);
+          bubble.appendChild(actions); // Move actions inside bubble container or keep abs positioned relative to wrapper?
+          // The actions toolbar relies on absolute positioning usually.
+          // Let's attach actions to bubble to keep them together.
+          bubble.style.position = 'relative';
+
+
+          // --- Greeting Swipe Arrows (First AI message with alternates) ---
+          if (idx === 0 && msg.role === 'model' && Array.isArray(state.seed.firstMessage) && state.seed.firstMessage.length > 1) {
+            const greetings = state.seed.firstMessage;
+            if (state.sim.greetingIndex === undefined) state.sim.greetingIndex = 0;
+            const gIdx = state.sim.greetingIndex;
+
+            const swipeOverlay = document.createElement('div');
+            swipeOverlay.style.cssText = 'display:flex; justify-content:space-between; align-items:center; position:absolute; top:50%; left:0; right:0; transform:translateY(-50%); pointer-events:none;';
+
+            swipeOverlay.innerHTML = `
+              <button class="btn btn-ghost btn-sm swipe-btn swipe-prev" style="pointer-events:auto; font-size:18px; opacity:0.7;">&lt;</button>
+              <span style="font-size:10px; color:var(--text-muted); background:var(--bg-base); padding:2px 6px; border-radius:4px;">${gIdx + 1} / ${greetings.length}</span>
+              <button class="btn btn-ghost btn-sm swipe-btn swipe-next" style="pointer-events:auto; font-size:18px; opacity:0.7;">&gt;</button>
+            `;
+
+            wrapper.style.position = 'relative';
+            wrapper.appendChild(swipeOverlay);
+
+            // Bind swipe buttons (defer to avoid immediate re-render loop)
+            setTimeout(() => {
+              const prevBtn = wrapper.querySelector('.swipe-prev');
+              const nextBtn = wrapper.querySelector('.swipe-next');
+              if (prevBtn) {
+                prevBtn.onclick = () => {
+                  const newIdx = (gIdx - 1 + greetings.length) % greetings.length;
+                  state.sim.greetingIndex = newIdx;
+                  state.sim.history[0].content = greetings[newIdx];
+                  A.State.notify();
+                  refreshChat();
+                };
+              }
+              if (nextBtn) {
+                nextBtn.onclick = () => {
+                  const newIdx = (gIdx + 1) % greetings.length;
+                  state.sim.greetingIndex = newIdx;
+                  state.sim.history[0].content = greetings[newIdx];
+                  A.State.notify();
+                  refreshChat();
+                };
+              }
+            }, 0);
+          }
+
           chatLog.appendChild(wrapper);
         });
 
@@ -1101,20 +1291,28 @@
             systemPrompt += `\n[Earlier Context]:\n${state.sim.contextSummary}\n`;
           }
 
+          // --- DIRECTOR'S GUIDANCE (Action 6b) ---
+          // Injected from Director's Console
+          if (state.sim.directorGuidance) {
+            systemPrompt += `\n[SYSTEM INSTRUCTION]: ${state.sim.directorGuidance}\n`;
+            // Clear after use? User might want it persistent?
+            // "Additional prompt to LLM" usually implies "for this turn".
+            // Let's clear it to prevent stuck states, but maybe keep it in UI?
+            // For now, clear logic state but UI might persist if we don't clear input.
+            // We'll clear the input in the Logic binder below.
+            delete state.sim.directorGuidance;
+          }
+
           sendBtn.textContent = 'Thinking...'; // Calling LLM
 
           // Store system prompt for Prompt Inspector
           state.sim.lastSystemPrompt = systemPrompt;
 
           // 3. CALL LLM (Action 7)
-          const config = JSON.parse(localStorage.getItem('anansi_sim_config') || '{"provider":"gemini","model":"gemini-2.0-flash-exp"}');
-          const keys = JSON.parse(localStorage.getItem('anansi_api_keys') || '{}');
-          const activeKeyName = localStorage.getItem('anansi_active_key_name') || 'Default';
-          const apiKey = keys[activeKeyName];
+          const llmConfig = A.UI.getActiveLLMConfig ? A.UI.getActiveLLMConfig() : null;
+          if (!llmConfig || !llmConfig.apiKey) throw new Error("No API Key configured. Open API Configuration from the CFG lens.");
 
-          if (!apiKey) throw new Error("No API Key.");
-
-          const responseText = await callLLM(config.provider, config.model, apiKey, systemPrompt, state.sim.history);
+          const responseText = await callLLM(llmConfig.provider, llmConfig.model, llmConfig.apiKey, systemPrompt, state.sim.history, llmConfig.baseUrl);
 
           // Store response with injection details for per-message inspection
           // Extract microcues that fired from the execution log
@@ -1196,8 +1394,14 @@
         const txt = input.value.trim();
         if (!txt) return;
 
-        // 0. Push User Message with emotional snapshot
+        // Capture Director's Guidance from DOM at send time (more reliable than oninput)
         const state = A.State.get();
+        if (dirGuidance && dirGuidance.value.trim()) {
+          state.sim.directorGuidance = dirGuidance.value.trim();
+          dirGuidance.value = ''; // Clear after capture
+        }
+
+        // 0. Push User Message with emotional snapshot
         state.sim.history.push({
           role: 'user',
           content: txt,
@@ -1527,7 +1731,7 @@
         renderEmotions(lensContent);
         renderEros(lensContent);
         renderIntents(lensContent);
-        renderActors(lensContent);
+        renderActors(lensContent.querySelector('#sim-actors'));
 
         const tagInput = lensContent.querySelector('#sim-add-tag');
         if (tagInput) {
@@ -1992,203 +2196,35 @@
         }
 
       } else if (activeLens === 'config') {
-        const config = JSON.parse(localStorage.getItem('anansi_sim_config') || '{"provider":"gemini","model":"gemini-2.0-flash"}');
-        const keys = JSON.parse(localStorage.getItem('anansi_api_keys') || '{"Default":""}');
-        const activeKeyName = localStorage.getItem('anansi_active_key_name') || 'Default';
+        const activeConfig = A.UI.getActiveLLMConfig ? A.UI.getActiveLLMConfig() : null;
 
         lensContent.innerHTML = `
-                  <div style="display:flex; flex-direction:column; gap:12px;">
-                    <section>
-                      <div style="font-weight:bold; margin-bottom:8px; color:var(--text-muted); text-transform:uppercase; font-size:10px;">LLM Provider</div>
-                      <div class="form-group">
-                        <label class="label" style="font-size:10px;">Provider</label>
-                        <select class="input" id="sim-provider" style="font-size:11px;">
-                          <option value="gemini" ${config.provider === 'gemini' ? 'selected' : ''}>Google Gemini</option>
-                          <option value="openai" ${config.provider === 'openai' ? 'selected' : ''}>OpenAI</option>
-                          <option value="chutes" ${config.provider === 'chutes' ? 'selected' : ''}>Chutes AI</option>
-                          <option value="custom" ${config.provider === 'custom' ? 'selected' : ''}>Custom (OpenAI-compatible)</option>
-                          <option value="kobold" ${config.provider === 'kobold' ? 'selected' : ''}>Kobold (Local)</option>
-                        </select>
-                      </div>
-                      <div class="form-group">
-                        <label class="label" style="font-size:10px;">Model ID</label>
-                        <input class="input" id="sim-model" value="${config.model || 'gemini-2.0-flash'}" style="font-size:11px;">
-                      </div>
-                      <div class="form-group" id="custom-url-group" style="display:${config.provider === 'custom' ? 'block' : 'none'};">
-                        <label class="label" style="font-size:10px;">Base URL <span style="opacity:0.6;">(for Custom)</span></label>
-                        <input class="input" id="sim-base-url" value="${config.baseUrl || 'https://api.example.com/v1'}" placeholder="https://api.example.com/v1" style="font-size:11px;">
-                        <div style="font-size:9px; color:var(--text-muted); margin-top:4px;">Endpoint: {baseUrl}/chat/completions</div>
-                      </div>
-                    </section>
-                    
-                    <button class="btn btn-secondary btn-sm" id="btn-manage-keys" style="width:100%; margin-top:8px;">Manage API Keys</button>
-                    <button class="btn btn-ghost btn-sm" id="sim-reset-config" style="width:100%; margin-top:8px; font-size:10px;">Reset Settings</button>
-                  </div>
-                `;
-
-        // Simplified Config Logic for Brevity (Full implementation requires saving logic)
-        const p = lensContent.querySelector('#sim-provider');
-        const m = lensContent.querySelector('#sim-model');
-        const u = lensContent.querySelector('#sim-base-url');
-        const urlGroup = lensContent.querySelector('#custom-url-group');
-
-        const saveConfig = () => {
-          const configData = {
-            provider: p.value,
-            model: m.value
-          };
-          if (u) configData.baseUrl = u.value;
-          localStorage.setItem('anansi_sim_config', JSON.stringify(configData));
-        };
-
-        // Show/hide base URL field based on provider
-        p.onchange = () => {
-          if (urlGroup) urlGroup.style.display = p.value === 'custom' ? 'block' : 'none';
-          saveConfig();
-        };
-        m.onchange = saveConfig;
-        if (u) u.onchange = saveConfig;
-
-        lensContent.querySelector('#btn-manage-keys').onclick = () => showKeyManagerModal();
-        lensContent.querySelector('#sim-reset-config').onclick = () => {
-          if (confirm('Reset?')) {
-            localStorage.removeItem('anansi_sim_config');
-            A.State.notify();
-          }
-        };
-      }
-    }
-
-    function showKeyManagerModal() {
-      // Get current keys from localStorage
-      const keys = JSON.parse(localStorage.getItem('anansi_api_keys') || '{"Default":""}');
-      const activeKeyName = localStorage.getItem('anansi_active_key_name') || 'Default';
-
-      // Create modal overlay
-      const overlay = document.createElement('div');
-      overlay.id = 'key-manager-overlay';
-      overlay.style.cssText = `
-        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-        background: rgba(0,0,0,0.7); z-index: 9999;
-        display: flex; align-items: center; justify-content: center;
-      `;
-
-      // Modal container
-      const modal = document.createElement('div');
-      modal.style.cssText = `
-        background: var(--bg-base); border-radius: var(--radius-lg);
-        border: 1px solid var(--border-default); padding: 24px;
-        min-width: 400px; max-width: 500px; max-height: 80vh; overflow-y: auto;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-      `;
-
-      // Render modal content
-      const renderModalContent = () => {
-        const keyNames = Object.keys(keys);
-
-        modal.innerHTML = `
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-            <h3 style="margin:0; font-size:16px; color:var(--text-primary);">API Key Manager</h3>
-            <button id="modal-close" style="background:none; border:none; color:var(--text-muted); font-size:20px; cursor:pointer;">×</button>
-          </div>
-          
-          <div style="margin-bottom:16px; padding:12px; background:var(--bg-surface); border-radius:var(--radius-md); border:1px solid var(--border-subtle);">
-            <div style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">ACTIVE KEY</div>
-            <select id="active-key-select" class="input" style="width:100%;">
-              ${keyNames.map(name => `<option value="${name}" ${name === activeKeyName ? 'selected' : ''}>${name}</option>`).join('')}
-            </select>
-          </div>
-
-          <div style="margin-bottom:16px;">
-            <div style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">SAVED KEYS (${keyNames.length})</div>
-            <div id="keys-list" style="display:flex; flex-direction:column; gap:8px; max-height:200px; overflow-y:auto;">
-              ${keyNames.map(name => `
-                <div class="key-row" data-name="${name}" style="display:flex; align-items:center; gap:8px; padding:8px; background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:var(--radius-md);">
-                  <div style="flex:1;">
-                    <div style="font-size:12px; font-weight:bold; color:var(--text-primary);">${name}</div>
-                    <div style="font-size:10px; color:var(--text-muted);">${keys[name] ? '••••••••' + keys[name].slice(-4) : '(not set)'}</div>
-                  </div>
-                  <button class="btn-edit-key btn btn-ghost btn-sm" data-name="${name}" style="font-size:10px;">Edit</button>
-                  ${name !== 'Default' ? `<button class="btn-del-key btn btn-ghost btn-sm" data-name="${name}" style="font-size:10px; color:var(--status-error);">Delete</button>` : ''}
+          <div style="display:flex; flex-direction:column; gap:12px;">
+            <section>
+              <div style="font-weight:bold; margin-bottom:8px; color:var(--text-muted); text-transform:uppercase; font-size:10px;">Active LLM Configuration</div>
+              ${activeConfig ? `
+                <div style="padding:12px; background:var(--bg-elevated); border:1px solid var(--accent-primary); border-radius:var(--radius-md);">
+                  <div style="font-size:13px; font-weight:bold; color:var(--text-primary);">${activeConfig.provider.toUpperCase()}</div>
+                  <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">Model: <strong>${activeConfig.model}</strong></div>
+                  ${activeConfig.provider === 'custom' ? `<div style="font-size:10px; color:var(--text-muted); margin-top:2px;">URL: ${activeConfig.baseUrl}</div>` : ''}
+                  <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">API Key: ${activeConfig.apiKey ? '••••••••' + activeConfig.apiKey.slice(-4) : '<span style="color:var(--status-error);">Not set</span>'}</div>
                 </div>
-              `).join('')}
-            </div>
-          </div>
-
-          <div style="border-top:1px solid var(--border-subtle); padding-top:16px;">
-            <div style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">ADD NEW KEY</div>
-            <div style="display:flex; gap:8px; margin-bottom:8px;">
-              <input id="new-key-name" class="input" placeholder="Key Name" style="flex:1;">
-              <input id="new-key-value" class="input" type="password" placeholder="API Key" style="flex:2;">
-            </div>
-            <button id="btn-add-key" class="btn btn-primary btn-sm" style="width:100%;">+ Add Key</button>
+              ` : `
+                <div style="padding:12px; background:var(--bg-surface); border-radius:var(--radius-md); text-align:center; color:var(--text-muted); font-size:11px;">
+                  No configuration set. Click below to add one.
+                </div>
+              `}
+            </section>
+            
+            <button class="btn btn-primary btn-sm" id="btn-manage-keys" style="width:100%;">⚙️ Manage API Configurations</button>
           </div>
         `;
 
-        // Bind events
-        modal.querySelector('#modal-close').onclick = () => overlay.remove();
-
-        modal.querySelector('#active-key-select').onchange = (e) => {
-          localStorage.setItem('anansi_active_key_name', e.target.value);
-        };
-
-        modal.querySelectorAll('.btn-edit-key').forEach(btn => {
-          btn.onclick = () => {
-            const name = btn.dataset.name;
-            const newValue = prompt(`Enter new API key for "${name}":`, keys[name] || '');
-            if (newValue !== null) {
-              keys[name] = newValue;
-              localStorage.setItem('anansi_api_keys', JSON.stringify(keys));
-              renderModalContent();
-            }
-          };
-        });
-
-        modal.querySelectorAll('.btn-del-key').forEach(btn => {
-          btn.onclick = () => {
-            const name = btn.dataset.name;
-            if (confirm(`Delete key "${name}"?`)) {
-              delete keys[name];
-              localStorage.setItem('anansi_api_keys', JSON.stringify(keys));
-              // If we deleted the active key, switch to Default
-              if (localStorage.getItem('anansi_active_key_name') === name) {
-                localStorage.setItem('anansi_active_key_name', 'Default');
-              }
-              renderModalContent();
-            }
-          };
-        });
-
-        modal.querySelector('#btn-add-key').onclick = () => {
-          const nameInput = modal.querySelector('#new-key-name');
-          const valueInput = modal.querySelector('#new-key-value');
-          const name = nameInput.value.trim();
-          const value = valueInput.value.trim();
-
-          if (!name) {
-            alert('Please enter a key name.');
-            return;
-          }
-          if (keys[name]) {
-            alert('A key with this name already exists.');
-            return;
-          }
-
-          keys[name] = value;
-          localStorage.setItem('anansi_api_keys', JSON.stringify(keys));
-          renderModalContent();
-        };
-      };
-
-      renderModalContent();
-      overlay.appendChild(modal);
-      document.body.appendChild(overlay);
-
-      // Close on overlay click
-      overlay.onclick = (e) => {
-        if (e.target === overlay) overlay.remove();
-      };
+        lensContent.querySelector('#btn-manage-keys').onclick = () => A.UI.showApiKeyManager();
+      }
     }
+
+
 
     // Dummy implementations for render helpers to prevent errors if they weren't copied fully
     // If they exist in original file, this might duplicate, but we are replacing the end of file.
