@@ -184,8 +184,13 @@
       </div>
       <div class="card-body" id="voice-list" style="padding:0; flex:1; overflow-y:auto;"></div>
       <div class="card-footer" style="display:flex; justify-content:space-between; align-items:center;">
-        <label style="font-size:11px; cursor:pointer;"><input type="checkbox" id="chk-debug" ${data.debug ? 'checked' : ''}> Debug Crumbs</label>
-        <button class="btn btn-ghost btn-sm" id="btn-view-script" style="font-size:10px;">View Script →</button>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <label style="font-size:11px; cursor:pointer;"><input type="checkbox" id="chk-debug" ${data.debug ? 'checked' : ''}> Debug Crumbs</label>
+        </div>
+        <div style="display:flex; gap:8px;">
+           <button class="btn btn-ghost btn-sm" id="btn-vault-import" title="Import from Vault">📥</button>
+           <button class="btn btn-ghost btn-sm" id="btn-view-script" style="font-size:10px;">View Script →</button>
+        </div>
       </div>
     `;
 
@@ -198,12 +203,23 @@
     editorCol.style.padding = '0';
     editorCol.id = 'voice-editor';
 
-    // Simplified layout (no preview pane - scripts go to Scripts panel)
+    // Simplified layout
     container.appendChild(listCol);
     container.appendChild(editorCol);
 
     // --- Logic ---
     const listBody = listCol.querySelector('#voice-list');
+
+    // --- State Management ---
+    // Update data reference when state changes (e.g. Vault import)
+    A.State.subscribe((newState) => {
+      // Check if panel is still mounted
+      if (!document.body.contains(container)) return;
+
+      if (newState.weaves?.voices) {
+        refreshList();
+      }
+    });
 
     // Bind Search
     listCol.querySelector('#search-voices').oninput = (e) => {
@@ -219,7 +235,11 @@
     function refreshList() {
       listBody.innerHTML = '';
 
-      let voices = data.voices;
+      // Always fetch fresh state to handle external updates (Vault, Undo/Redo)
+      const freshState = A.State.get();
+      const freshData = freshState.weaves?.voices || { voices: [] };
+      let voices = freshData.voices || [];
+
       if (searchTerm) {
         voices = voices.map((v, i) => ({ ...v, originalIndex: i })) // Keep track of original index
           .filter(v => (v.characterName || '').toLowerCase().includes(searchTerm) || (v.chatName || '').toLowerCase().includes(searchTerm));
@@ -244,7 +264,9 @@
         }
 
         row.innerHTML = `
-           <div style="font-weight:bold;">${v.characterName || 'Unnamed Voice'}</div>
+           <div style="font-weight:bold;">${v.characterName || 'Unnamed Voice'}
+           ${v.vaultLink && v.vaultLink.vaultId ? (v.vaultLink.locallyModified ? '<span style="color:var(--status-warning);"> ●</span>' : '<span style="color:var(--text-muted);"> ✓</span>') : ''}
+           </div>
            <div style="font-size:10px; color:var(--text-muted);">${v.chatName ? 'Chat: ' + v.chatName : ''} • ${v.subtones ? v.subtones.length : 0} subtones</div>
         `;
         row.onclick = () => { currentVoiceIndex = v.originalIndex; refreshList(); renderEditor(); };
@@ -275,15 +297,51 @@
       </style>`;
       editorCol.innerHTML = style;
 
+      // Helper: Get available actors
+      const freshState = A.State.get();
+      const freshData = freshState.weaves?.voices || { voices: [] };
+      const allActors = freshState.nodes?.actors?.items || {};
+
+      // Use freshData instead of closure 'data'
+      const usedActorIds = new Set(freshData.voices.filter((voice, idx) => idx !== currentVoiceIndex && voice.actorId).map(voice => voice.actorId));
+
+      const availableActors = Object.values(allActors).filter(actor => !usedActorIds.has(actor.id));
+      availableActors.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
       // Header
       const header = document.createElement('div');
       header.className = 'card-header';
+
+      let actorOptions = `<option value="" disabled ${!v.actorId ? 'selected' : ''}>Select Actor...</option>`;
+
+      // If we have a legacy name but no ID, or an orphaned ID, ensure we handle it gracefully
+      let currentActorValid = false;
+      if (v.actorId && allActors[v.actorId]) {
+        currentActorValid = true;
+      }
+
+      availableActors.forEach(actor => {
+        const isSelected = v.actorId === actor.id;
+        actorOptions += `<option value="${actor.id}" ${isSelected ? 'selected' : ''}>${actor.name}</option>`;
+      });
+
+      // Valid current actor (even if filtered out above? No, availableActors excludes OTHERS, so current IS in availableActors if logic holds?
+      // Wait, logic above: idx !== currentVoiceIndex. So current voice's actor is NOT excluded. Good.
+
+      // Fallback for legacy text that doesn't match an actor (or if user wants to keep it for now)
+      // The requirement suggests strict tying. But we shouldn't break existing invalid state too hard.
+      // If no actorId is set, but characterName exists, show it as a disabled option or label?
+      // User said "Make it a drop down tied to ACTOR."
+
       header.innerHTML = `
         <div style="display:flex; flex-direction:column; gap:4px; flex:1;">
-          <input class="input" id="inp-charname" value="${v.characterName || ''}" placeholder="Character Name" style="font-weight:bold;">
+          <select class="input" id="sel-charname" style="font-weight:bold;">
+            ${actorOptions}
+          </select>
           <input class="input" id="inp-chatname" value="${v.chatName || ''}" placeholder="Chat Name (in messages)" style="font-size:12px;">
         </div>
         <label style="display:flex; align-items:center; gap:4px; font-size:12px;"><input type="checkbox" id="chk-en" ${v.enabled ? 'checked' : ''}> Enabled</label>
+        <button class="btn btn-ghost btn-sm" id="btn-vault-pub" style="margin-left:8px;" title="Publish to Vault">📤</button>
         <button class="btn btn-ghost btn-sm" id="btn-del" style="color:var(--status-error);">Delete</button>
       `;
       editorCol.appendChild(header);
@@ -325,11 +383,23 @@
       editorCol.appendChild(body);
 
       // --- Bindings ---
-      const upd = () => { A.State.notify(); syncScript(); };
+      const markMod = () => { if (v.vaultLink && v.vaultLink.vaultId) v.vaultLink.locallyModified = true; };
+      const upd = () => { markMod(); A.State.notify(); syncScript(); };
 
-      header.querySelector('#inp-charname').oninput = e => { v.characterName = e.target.value; upd(); refreshList(); };
+      header.querySelector('#sel-charname').onchange = e => {
+        const actorId = e.target.value;
+        const actor = allActors[actorId];
+        if (actor) {
+          v.actorId = actorId;
+          v.characterName = actor.name;
+          // Add simple trace tag defaulting to first letter
+          if (!v.tag || v.tag === 'V') v.tag = actor.name.charAt(0).toUpperCase();
+          upd();
+          refreshList();
+          if (A.UI.Toast) A.UI.Toast.show(`Linked to ${actor.name}`, 'info');
+        }
+      };
       header.querySelector('#inp-chatname').oninput = e => { v.chatName = e.target.value; upd(); refreshList(); };
-      header.querySelector('#inp-charname').onchange = e => { if (A.UI.Toast) A.UI.Toast.show('Name saved', 'info'); };
       header.querySelector('#chk-en').onchange = e => { v.enabled = e.target.checked; upd(); if (A.UI.Toast) A.UI.Toast.show(v.enabled ? 'Voice enabled' : 'Voice disabled', 'info'); };
       header.querySelector('#btn-del').onclick = () => {
         if (confirm('Delete voice?')) {
@@ -339,6 +409,19 @@
           refreshList();
           renderEditor();
           if (A.UI.Toast) A.UI.Toast.show('Voice deleted', 'info');
+        }
+      };
+
+      header.querySelector('#btn-vault-pub').onclick = () => {
+        if (A.VaultUI) {
+          A.VaultUI.showPublishDialog({
+            type: 'voice-config',
+            title: '📤 Publish Voice Config',
+            payload: v,
+            defaultName: v.characterName || 'Untitled Voice',
+            contentPreview: `Tag: ${v.tag}\nSubtones: ${v.subtones?.length || 0}`,
+            // We don't subtype voices usually, but we could if needed
+          });
         }
       };
 
@@ -440,6 +523,32 @@
       A.State.notify();
       if (A.UI && A.UI.switchPanel) {
         A.UI.switchPanel('scripts', { selectScript: 'gen_voices' });
+      }
+    };
+
+    listCol.querySelector('#btn-vault-import').onclick = () => {
+      if (A.VaultUI) {
+        A.VaultUI.showBlockPickerDialog({
+          type: 'voice-config',
+          title: '📥 Import Voice Config',
+          onSelect: (item) => {
+            const payload = item.payload || item;
+            // Reset ID/status to make it a new copy?
+            // Actually, we want to keep it linked if possible, or usually import makes a copy.
+            // The standardVault logic usually sets vaultLink if we want to track it.
+            // Let's create a new object but attach the link.
+
+            const newVoice = JSON.parse(JSON.stringify(payload));
+            newVoice.vaultLink = { vaultId: item.id, version: item.version, lastSync: Date.now() };
+
+            data.voices.push(newVoice);
+            currentVoiceIndex = data.voices.length - 1;
+            if (A.UI.Toast) A.UI.Toast.show('Imported voice from Vault', 'success');
+            refreshList();
+            renderEditor();
+            syncScript();
+          }
+        });
       }
     };
 
