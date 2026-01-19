@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<!-- Release Workflow Test 1.8.0 -->
+<!-- Release Workflow Test 1.11.0 -->
 <html lang="en">
 
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Anansi - v1.8.0</title>
+  <title>Anansi - v1.11.3</title>
 
   <!-- Open Graph / Social Media Previews -->
   <meta property="og:title" content="Anansi: AI Narrative Engine" />
@@ -102,7 +102,7 @@
         </button>
         <div class="app-logo">
           <img class="app-logo-img" src="assets/logo_dark.png" alt="Anansi Logo">
-          <span>Anansi <span style="font-size:0.6em; opacity:0.5; vertical-align:middle;">v1.8.0</span></span>
+          <span>Anansi <span style="font-size:0.6em; opacity:0.5; vertical-align:middle;">v1.11.3</span></span>
         </div>
       </div>
 
@@ -245,6 +245,7 @@
   <script src="js/core/flow-logger.js"></script>
   <script src="js/core/card-encoder.js"></script>
   <script src="js/core/presets/cue-presets.js"></script>
+  <script src="js/core/quirk-engine.js"></script>
 
   <script src="js/core/converter.js"></script>
   <script src="js/core/llm.js"></script>
@@ -252,9 +253,23 @@
   <script src="js/core/state.js"></script>
 
   <script src="js/core/ui.js?v=2"></script>
+  <script src="js/core/ui-modal.js"></script>
+  <script src="js/core/ui-components.js"></script>
+  <script src="js/core/ui-api-config.js"></script>
   <script src="js/core/ui-assistant.js"></script>
+  <script src="js/core/ui-dragdrop.js"></script>
   <script src="js/core/tour.js"></script>
   <script src="js/core/tour_content.js?v=20260106"></script>
+
+  <!-- RPG Plugin System -->
+  <!-- RPG Plugin System -->
+  <!-- rpg_core, rpg_loader loaded dynamically below -->
+  <script src="js/plugins/rpg/rpg_engine.js"></script>
+  <script src="js/plugins/rpg/rpg_quests.js"></script>
+  <script src="js/plugins/rpg/rpg_quest_board.js"></script> <!-- Logical Core -->
+
+  <!-- RPG Panel UIs -->
+  <!-- rpg_gm, rpg_party loaded dynamically below -->
 
   <!-- Adapters -->
   <script src="js/env/jai.js"></script>
@@ -263,8 +278,14 @@
   <!-- Panels -->
   <script src="js/panels/project.js"></script>
   <script src="js/panels/sources.js"></script>
+  <script src="js/plugins/character/character-synth.js"></script>
+  <script src="js/plugins/character/character-solo.js"></script>
+  <script src="js/plugins/character/character-ensemble.js"></script>
   <script src="js/panels/character.js"></script>
+  <script src="js/plugins/actors/actors-gallery.js"></script>
+  <script src="js/plugins/actors/actors-tabs.js"></script>
   <script src="js/panels/actors.js"></script>
+
   <script src="js/panels/lorebook.js"></script>
   <script src="js/panels/vault.js"></script>
   <script src="js/panels/voices.js"></script>
@@ -276,14 +297,86 @@
   <script src="js/panels/scripts.js"></script>
   <script src="js/panels/locations.js"></script>
   <script src="js/panels/stats.js"></script>
+  <script src="js/panels/writers-block.js"></script>
+  <script src="js/panels/hinas_guide.js?v=9"></script>
   <script src="js/core/chat-formatter.js"></script>
-  <script src="js/panels/simulator.js?v=2"></script>
+  <script src="js/core/simulator-llm.js"></script>
+  <script src="js/panels/simulator-lens.js"></script>
+  <script src="js/panels/simulator-live.js"></script>
+  <script src="js/panels/simulator.js?v=3"></script>
   <script src="js/panels/flow-explorer.js"></script>
   <script src="js/panels/advanced.js"></script>
+  <script src="js/plugins/parlor/parlor-prompts.js"></script>
+  <script src="js/plugins/parlor/parlor-preview.js"></script>
   <script src="js/panels/parlor.js"></script>
   <script src="js/panels/nabu.js"></script>
   <script src="js/panels/constellation.js"></script>
   <script src="js/panels/guide.js"></script>
+  <script src="js/panels/rpg_play.js"></script>
+  <script src="js/panels/rpg_dialogue_panel.js"></script>
+  <script src="js/panels/rpg_leveling_panel.js"></script>
+
+  <!-- RPG Plugin (Isolated - errors won't crash main app) -->
+  <script>
+    (function () {
+      var rpgScripts = [
+        'js/plugins/rpg/rpg_loader.js',
+        'js/plugins/rpg/rpg_core.js',
+        'js/plugins/rpg/rpg_leveling.js',
+        'js/plugins/rpg/rpg_memory.js',
+        'js/plugins/rpg/rpg_cache.js',
+        'js/plugins/rpg/rpg_prompts.js',
+        'js/plugins/rpg/rpg_idle.js',
+        'js/plugins/rpg/rpg_death.js',
+        'js/plugins/rpg/rpg_autopilot.js',
+        'js/plugins/rpg/rpg_dialogue.js',
+        'js/plugins/rpg/rpg_combat_engine.js',
+        'js/plugins/rpg/rpg_gm.js',
+        'js/plugins/rpg/rpg_classes.js',
+        'js/plugins/rpg/rpg_party.js',
+        'js/plugins/rpg/rpg_monsters.js',
+        'js/plugins/rpg/rpg_feats.js',
+        'js/plugins/rpg/rpg_map.js',
+        'js/plugins/rpg/rpg_dm_map.js',
+        'js/plugins/rpg/rpg_armory.js'
+      ];
+
+      rpgScripts.forEach(function (src) {
+        try {
+          var script = document.createElement('script');
+          script.src = src;
+          script.onerror = function () { console.error('[RPG Plugin] Failed to load:', src); };
+          document.head.appendChild(script);
+        } catch (e) {
+          console.error('[RPG Plugin] Script load error:', src, e);
+        }
+      });
+    })();
+  </script>
+
+  <!-- Chronos Plugin (Enhanced RP - Isolated loading) -->
+  <script>
+    (function () {
+      var chronosScripts = [
+        'js/plugins/chronos/chronos_core.js',
+        'js/plugins/chronos/chronos_scheduler.js',
+        'js/plugins/chronos/chronos_settings.js',
+        'js/panels/chronos_chat.js'
+      ];
+
+      chronosScripts.forEach(function (src) {
+        try {
+          var script = document.createElement('script');
+          script.src = src;
+          script.onerror = function () { console.error('[Chronos Plugin] Failed to load:', src); };
+          document.head.appendChild(script);
+        } catch (e) {
+          console.error('[Chronos Plugin] Script load error:', src, e);
+        }
+      });
+    })();
+  </script>
+
 
 
   <!-- Loading Overlay -->

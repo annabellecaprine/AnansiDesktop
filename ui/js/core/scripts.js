@@ -11,7 +11,7 @@
         { id: 'sys_eros', name: 'SYSTEM: EROS', path: 'js/aura/EROS.js', order: -4, system: true, enabled: true, source: { code: '// Loading...' } },
         { id: 'sys_intent', name: 'SYSTEM: INTENT', path: 'js/aura/INTENT.js', order: -3, system: true, enabled: true, source: { code: '// Loading...' } },
         { id: 'sys_pulse', name: 'SYSTEM: PULSE', path: 'js/aura/PULSE.js', order: -2, system: true, enabled: true, source: { code: '// Loading...' } },
-        { id: 'sys_aura', name: 'SYSTEM: AURA', path: 'js/aura/AURA.js', order: -1, system: true, enabled: true, source: { code: '// Loading...' } }
+        { id: 'sys_aura', name: 'SYSTEM: AURA', path: 'js/aura/AURA.js', order: -1, system: true, enabled: true, source: { code: '// Loading...' } },
     ];
 
     const Scripts = {
@@ -20,20 +20,31 @@
             return 'script_' + Math.random().toString(36).substr(2, 9);
         },
 
-        // Load system scripts from pre-loaded data (inlined)
-        loadSystem: function () {
-            if (!A.SystemData) {
-                console.error("Anansi: System Data not found. Run build_system_data.py.");
-                // Fallback for development if not built
-                // return; 
-            }
+        // Load system scripts from pre-loaded data (inlined) or Fetch (fallback)
+        loadSystem: async function () {
+            // SystemData may not be available yet in some load orders - this is fine,
+            // we'll fall back to async fetch below
 
             for (const script of systemScripts) {
+                // FORCE OVERRIDE: Check SystemData first
                 if (A.SystemData && A.SystemData[script.id]) {
                     script.source.code = A.SystemData[script.id];
                 } else if (!script.source.code || script.source.code === '// Loading...') {
-                    // Check if we can find it in global scope (legacy fallback)
-                    // or just leave as is
+                    // Dev Mode / Fallback: Fetch from path
+                    if (script.path) {
+                        try {
+                            const res = await fetch(script.path);
+                            if (res.ok) {
+                                const text = await res.text();
+                                script.source.code = text;
+                                // console.log(`Loaded ${script.id} from ${script.path}`);
+                            } else {
+                                console.error(`Failed to load ${script.id}: ${res.status}`);
+                            }
+                        } catch (e) {
+                            console.error(`Error loading ${script.id}`, e);
+                        }
+                    }
                 }
             }
             A.State.notify();
@@ -69,8 +80,13 @@
 
         // Update script code or meta
         update: function (id, updates) {
-            // Prevent updating system scripts
-            if (systemScripts.find(s => s.id === id)) return;
+            // Check System Scripts first
+            const sysScript = systemScripts.find(s => s.id === id);
+            if (sysScript) {
+                Object.assign(sysScript, updates);
+                A.State.notify();
+                return;
+            }
 
             const state = A.State.get();
             if (!state || !state.strands.scripts.items[id]) return;
@@ -170,5 +186,4 @@
     setTimeout(() => Scripts.loadSystem(), 100);
 
     A.Scripts = Scripts;
-
 })(window.Anansi);

@@ -13,12 +13,12 @@
     const MAX_HISTORY = 5;
 
     // Define Category Order (Updated structure)
-    const categoryOrder = ['Loom', 'Seeds', 'Weave', 'Magic', 'Sacred Tools', 'Deep', 'Forbidden Secrets'];
+    const categoryOrder = ['Loom', 'Seeds', 'Weave', 'Magic', 'Immersion', 'Sacred Tools', 'Deep', 'Forbidden Secrets', 'RPG Experiment'];
 
     const ICONS = {
         'project': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>',
         'sources': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>',
-        'character': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>',
+        'character': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>',
         'actors': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>',
         'voices': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>',
         'microcues': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>',
@@ -63,6 +63,22 @@
                 lensRoot: document.getElementById('lens-root'),
                 appShell: document.getElementById('app-shell')
             };
+
+            // PostMessage Listener for Cross-Origin (iframe) Unlocking
+            window.addEventListener('message', (event) => {
+                // Security check? In local app, origins might be null or file://. 
+                // We'll trust the payload structure.
+                if (event.data && event.data.type === 'ANANSI_UNLOCK' && event.data.payload === 'dungeonmaster') {
+                    console.log("[UI] Received Unlock Command");
+                    localStorage.setItem('anansi_gm_unlocked', 'true');
+
+                    if (A.UI.Toast) A.UI.Toast.show("Features Unlocked. Reloading...", "success");
+
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 500);
+                }
+            });
 
             // Bind Topbar Actions
             // Dual-purpose hamburger: Desktop = ProjectPicker, Mobile = Nav Drawer
@@ -182,6 +198,13 @@
             // Subscribe to State Changes
             A.State.subscribe(state => {
                 if (!state) return;
+
+                // Refresh Nav if Mode Changes (e.g. Import Player Mode)
+                if (state.meta?.mode !== this.lastMode) {
+                    this.lastMode = state.meta?.mode;
+                    this.refreshNav();
+                }
+
                 this.els.displayName.textContent = state.meta.name + (state.isDirty ? ' •' : '');
                 this.updateIntegrityBadge(state);
 
@@ -204,10 +227,17 @@
                     return;
                 }
 
-                // Ctrl/Cmd + S → Save
+                // Save: Ctrl+S
                 if (cmdKey && e.key === 's') {
                     e.preventDefault();
-                    if (this.els.btnSave) this.els.btnSave.click();
+                    A.IO.save(A.State.get());
+                    if (A.UI.Toast) A.UI.Toast.show('Project saved!', 'success');
+                    if (A.UI.flashSuccess) A.UI.flashSuccess(this.els.btnSave);
+                }
+
+                // New Panel: Ctrl+Alt+N
+                if (cmdKey && e.altKey && e.key === 'n') {
+                    // Placeholder for future shortcut
                 }
 
                 // Ctrl/Cmd + B → Build (AURA export)
@@ -259,6 +289,39 @@
                 this.els.btnBack.onclick = () => this.goBack();
             }
 
+            // --- RPG EXPERIMENT PLACEHOLDERS ---
+            // Register placeholder panels for the new RPG category
+            const rpgPanels = [
+                { id: 'rpg_party', label: 'Party', desc: 'Hero management' }, // Player facing
+                { id: 'rpg_monsters', label: 'Monsters', desc: 'Bestiary and Stat blocks', gmOnly: true },
+                { id: 'rpg_map', label: 'Map', desc: 'Locations' }, // Player facing? Or GM? Usually shared. "Hina's Guide" handles map building.
+                { id: 'rpg_dm_map', label: 'DM Map', desc: 'World building', gmOnly: true },
+                { id: 'rpg_armory', label: 'Armory', desc: 'Items & Spells', gmOnly: true }
+            ];
+
+            rpgPanels.forEach(p => {
+                // Use a slight hack to check if registered, though Anansi.js doesn't expose 'isRegistered'. 
+                // We'll just register safely.
+                const existing = A.getNavSections().find(s => s.id === p.id);
+                if (!existing) {
+                    A.registerPanel(p.id, {
+                        label: p.label,
+                        category: 'RPG Experiment',
+                        icon: '🎲',
+                        render: (container) => {
+                            container.innerHTML = `
+                                <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; opacity:0.5;">
+                                    <div style="font-size:32px;">🚧</div>
+                                    <h3>${p.label}</h3>
+                                    <p>${p.desc}</p>
+                                    <div style="font-size:11px;">Coming soon to the RPG Experiment.</div>
+                                </div>
+                            `;
+                        }
+                    });
+                }
+            });
+
             // Render Initial Nav
             this.refreshNav();
 
@@ -293,6 +356,12 @@
             categoryOrder.forEach(cat => {
                 const groupItems = groups[cat];
                 if (!groupItems || groupItems.length === 0) return;
+
+                // LOCK: Hide RPG Experiment if not unlocked
+                const isGmUnlocked = localStorage.getItem('anansi_gm_unlocked') === 'true';
+                if (cat === 'RPG Experiment' && !isGmUnlocked) {
+                    return;
+                }
 
                 const isCollapsed = collapsedState[cat];
 
@@ -340,14 +409,24 @@
                     localStorage.setItem('anansi_sidebar_collapsed', JSON.stringify(currentStored));
                 };
 
-                groupItems.forEach(section => {
-                    if (section.hidden) return;
+                // Sort items by order
+                groupItems.sort((a, b) => (a.order || 99) - (b.order || 99));
 
-                    // Search filtering
-                    if (navSearchTerm) {
-                        const label = (section.label || '').toLowerCase();
-                        if (!label.includes(navSearchTerm)) {
-                            return; // Skip this item if it doesn't match search
+                // Helper to render a generic item button
+                const renderBtn = (section, containerDiv) => {
+                    // Check for Player Mode Lock
+                    const state = A.State.get();
+                    if (state && state.meta && state.meta.mode === 'player' && section.gmOnly) {
+                        return;
+                    }
+
+                    // Check for hidden property
+                    if (section.hidden) {
+                        if (section.id === 'gamemaster') {
+                            const isUnlocked = localStorage.getItem('anansi_gm_unlocked') === 'true';
+                            if (!isUnlocked) return;
+                        } else {
+                            return;
                         }
                     }
 
@@ -358,15 +437,93 @@
                     btn.style.alignItems = 'center';
                     btn.style.gap = '8px';
 
-                    const iconSvg = ICONS[section.id] || ICONS['advanced'];
+                    // Use registered icon (emoji) or lookup SVG
+                    // Detect if icon is an SVG string or simple text
+                    let iconContent = '';
+                    // 1. Check if ID matches a known SVG icon first (prioritize standard icons)
+                    if (ICONS[section.id]) {
+                        iconContent = ICONS[section.id];
+                    }
+                    // 2. Check explicitly provided SVG string
+                    else if (section.icon && section.icon.includes('<svg')) {
+                        iconContent = section.icon;
+                    }
+                    // 3. Fallback to assuming it's an emoji/text if it's a short string
+                    else if (section.icon && !section.icon.includes('<') && section.icon.length < 10) {
+                        iconContent = `<span style="font-size:14px; line-height:1;">${section.icon}</span>`;
+                    }
+                    // 4. Default fallback
+                    else {
+                        iconContent = ICONS['advanced'];
+                    }
 
                     btn.innerHTML = `
-             <span class="nav-icon" style="opacity:${section.id === activePanelId ? 1 : 0.6}; transition:opacity 0.2s;">${iconSvg}</span>
+             <span class="nav-icon" style="opacity:${section.id === activePanelId ? 1 : 0.6}; transition:opacity 0.2s; display:flex; align-items:center;">${iconContent}</span>
              <span class="nav-item-label">${section.label}</span>
            `;
                     btn.onclick = () => UI.switchPanel(section.id);
-                    list.appendChild(btn);
-                });
+                    containerDiv.appendChild(btn);
+                };
+
+                // If searching, render flat list
+                if (navSearchTerm) {
+                    groupItems.forEach(section => {
+                        const label = (section.label || '').toLowerCase();
+                        if (label.includes(navSearchTerm)) {
+                            renderBtn(section, list);
+                        }
+                    });
+                } else {
+                    // Normal rendering with subcategories
+                    const mainItems = groupItems.filter(s => !s.subcategory);
+                    const subcats = {};
+                    groupItems.filter(s => s.subcategory).forEach(s => {
+                        if (!subcats[s.subcategory]) subcats[s.subcategory] = [];
+                        subcats[s.subcategory].push(s);
+                    });
+
+                    // Render main (top-level) items first
+                    mainItems.forEach(s => renderBtn(s, list));
+
+                    // Render Subcategories
+                    Object.keys(subcats).forEach(subName => {
+                        const subGroup = subcats[subName];
+
+                        // Subcategory Header (Collapsible)
+                        const subHeader = document.createElement('div');
+                        const isSubCollapsed = (JSON.parse(localStorage.getItem('anansi_sub_collapsed') || '{}')[subName]) === true;
+
+                        subHeader.style.cssText = 'padding:6px 12px 6px 12px; font-size:10px; font-weight:bold; color:var(--text-muted); cursor:pointer; display:flex; justify-content:space-between; align-items:center; margin-top:4px;';
+                        subHeader.innerHTML = `<span>${subName}</span><span class="sub-chev" style="font-size:8px; transform:${isSubCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)'}">▼</span>`;
+
+                        const subList = document.createElement('div');
+                        subList.style.display = isSubCollapsed ? 'none' : 'flex';
+                        subList.style.flexDirection = 'column';
+                        subList.style.gap = '2px';
+                        subList.style.marginLeft = '8px'; // Indent sub-items
+                        subList.style.borderLeft = '1px solid var(--border-subtle)';
+
+                        // Populate
+                        subGroup.forEach(s => renderBtn(s, subList));
+
+                        // Toggle
+                        subHeader.onclick = () => {
+                            const was = subList.style.display === 'none';
+                            const newVal = was ? 'flex' : 'none';
+                            subList.style.display = newVal;
+                            const sc = subHeader.querySelector('.sub-chev');
+                            if (sc) sc.style.transform = newVal === 'none' ? 'rotate(-90deg)' : 'rotate(0deg)';
+
+                            // Persist
+                            const store = JSON.parse(localStorage.getItem('anansi_sub_collapsed') || '{}');
+                            store[subName] = (newVal === 'none');
+                            localStorage.setItem('anansi_sub_collapsed', JSON.stringify(store));
+                        };
+
+                        list.appendChild(subHeader);
+                        list.appendChild(subList);
+                    });
+                }
 
                 container.appendChild(list);
             });
@@ -543,854 +700,10 @@
 
     A.UI = UI;
 
-    // --- Modal Utility ---
-    A.UI.Modal = {
-        show: function (config) {
-            // config: { title, content, actions: [{label, class, onclick}], onClose }
-            const overlay = document.createElement('div');
-            overlay.className = 'modal-overlay';
-            overlay.style = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(2px);';
-
-            const modal = document.createElement('div');
-            modal.className = 'card modal-content';
-            modal.style = `width:${config.width || 480}px; max-width:90%; position:relative; box-shadow:var(--shadow-soft);`;
-
-            // Handle content as string or DOM element
-            const contentIsElement = config.content instanceof HTMLElement;
-            const bodyStyle = config.height
-                ? `height:${config.height}; overflow:hidden;`
-                : `max-height:70vh; overflow-y:auto;`;
-
-            modal.innerHTML = `
-                <div class="card-header">
-                    <strong>${config.title || 'Dialog'}</strong>
-                    <button class="btn btn-ghost btn-sm" id="modal-close-x">&times;</button>
-                </div>
-                <div class="card-body modal-body" style="${bodyStyle}">
-                    ${contentIsElement ? '' : (config.content || '')}
-                </div>
-                <div class="card-footer" style="padding:12px; border-top:1px solid var(--border-subtle); display:flex; justify-content:flex-end; gap:8px;">
-                    <!-- Actions -->
-                </div>
-            `;
-
-            // If content is a DOM element, append it
-            if (contentIsElement) {
-                modal.querySelector('.modal-body').appendChild(config.content);
-            }
-
-            const footer = modal.querySelector('.card-footer');
-            if (config.actions) {
-                config.actions.forEach(act => {
-                    const btn = document.createElement('button');
-                    btn.className = `btn ${act.class || 'btn-secondary'} btn-sm`;
-                    btn.textContent = act.label;
-                    btn.onclick = async () => {
-                        const result = await act.onclick(modal);
-                        if (result !== false) this.hide(overlay);
-                    };
-                    footer.appendChild(btn);
-                });
-            } else {
-                footer.style.display = 'none';
-            }
-
-            const close = () => {
-                this.hide(overlay);
-                if (config.onClose) config.onClose();
-            };
-
-            modal.querySelector('#modal-close-x').onclick = close;
-            overlay.onclick = (e) => { if (e.target === overlay) close(); };
-
-            overlay.appendChild(modal);
-            document.body.appendChild(overlay);
-            return overlay;
-        },
-
-        hide: function (overlay) {
-            if (overlay && overlay.parentNode) {
-                overlay.parentNode.removeChild(overlay);
-            }
-        }
-    };
-
-    // --- Toast Utility ---
-    A.UI.Toast = {
-        show: function (message, type = 'info', duration = 3500) {
-            const container = document.getElementById('toast-container');
-            if (!container) return;
-
-            const toast = document.createElement('div');
-            toast.className = `toast toast-${type}`;
-
-            const icons = {
-                success: '<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>',
-                error: '<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
-                warning: '<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
-                info: '<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
-            };
-
-            toast.innerHTML = `
-                ${icons[type] || icons.info}
-                <span class="toast-message">${message}</span>
-            `;
-
-            container.appendChild(toast);
-
-            setTimeout(() => {
-                toast.style.opacity = '0';
-                toast.style.transform = 'translateX(20px)';
-                toast.style.transition = 'opacity 0.3s, transform 0.3s';
-                setTimeout(() => toast.remove(), 300);
-            }, duration);
-        }
-    };
-
-    // --- Button Success Flash Helper ---
-    A.UI.flashSuccess = function (buttonEl) {
-        if (!buttonEl) return;
-        buttonEl.classList.add('btn-success-flash');
-        setTimeout(() => buttonEl.classList.remove('btn-success-flash'), 600);
-    };
-
-    // --- Global Overview Lens ---
-    A.UI.renderGlobalOverviewLens = function (container) {
-        const state = A.State.get();
-        if (!state) {
-            container.innerHTML = '<div style="padding:16px; color:var(--text-muted);">No project loaded.</div>';
-            return;
-        }
-
-        const lorebookCount = Object.keys(state.weaves?.lorebook?.entries || {}).length;
-        const actorCount = Object.keys(state.nodes?.actors?.items || {}).length;
-        const eventCount = Object.keys(state.aura?.events?.items || {}).length;
-        const microcueCount = Object.keys(state.aura?.microcues?.items || {}).length;
-
-        let integrityHtml = '<span style="color:var(--status-success);">✓ OK</span>';
-        if (A.Validator) {
-            const issues = A.Validator.run(state);
-            const errors = issues.filter(i => i.severity === 'error').length;
-            const warnings = issues.filter(i => i.severity === 'warning').length;
-            if (errors > 0) {
-                integrityHtml = `<span style="color:var(--status-error);">✗ ${errors} Error${errors > 1 ? 's' : ''}</span>`;
-            } else if (warnings > 0) {
-                integrityHtml = `<span style="color:var(--status-warning);">⚠ ${warnings} Warning${warnings > 1 ? 's' : ''}</span>`;
-            }
-        }
-
-        container.innerHTML = `
-            <div style="padding:8px 0;">
-                <div style="font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin-bottom:12px;">Project Overview</div>
-                
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:16px;">
-                    <div class="card" style="margin:0; padding:12px; text-align:center;">
-                        <div style="font-size:20px; font-weight:600; color:var(--accent-primary);">${lorebookCount}</div>
-                        <div style="font-size:11px; color:var(--text-muted);">Lore Entries</div>
-                    </div>
-                    <div class="card" style="margin:0; padding:12px; text-align:center;">
-                        <div style="font-size:20px; font-weight:600; color:var(--accent-primary);">${actorCount}</div>
-                        <div style="font-size:11px; color:var(--text-muted);">Actors</div>
-                    </div>
-                    <div class="card" style="margin:0; padding:12px; text-align:center;">
-                        <div style="font-size:20px; font-weight:600; color:var(--accent-primary);">${eventCount}</div>
-                        <div style="font-size:11px; color:var(--text-muted);">Events</div>
-                    </div>
-                    <div class="card" style="margin:0; padding:12px; text-align:center;">
-                        <div style="font-size:20px; font-weight:600; color:var(--accent-primary);">${microcueCount}</div>
-                        <div style="font-size:11px; color:var(--text-muted);">Microcues</div>
-                    </div>
-                </div>
-
-                <div style="border-top:1px solid var(--border-subtle); padding-top:12px;">
-                    <div style="font-size:12px; color:var(--text-secondary); margin-bottom:8px;">Integrity</div>
-                    <div style="font-size:13px;">${integrityHtml}</div>
-                </div>
-            </div>
-        `;
-    };
-
-    // --- Category Hints for Navigation ---
-    const categoryHints = {
-        'Loom': 'Project settings',
-        'Seed': 'Core character data',
-        'Weave': 'World knowledge',
-        'Magic': 'Dynamic behaviors',
-        'Test': 'Simulation & testing',
-        'Advanced': 'Power tools',
-        'Deep': 'System internals'
-    };
-
-    // Override refreshNav to add hints
-    const originalRefreshNav = UI.refreshNav;
-    UI.refreshNav = function () {
-        originalRefreshNav.call(this);
-
-        // Add data-hint attributes to nav headers
-        const headers = this.els.navContainer.querySelectorAll('.nav-header');
-        headers.forEach(header => {
-            const catName = header.textContent.trim();
-            if (categoryHints[catName]) {
-                header.setAttribute('data-hint', categoryHints[catName]);
-            }
-        });
-    };
-
-    // Override setLens to use Global Overview as default
-    const originalSetLens = UI.setLens;
-    UI.setLens = function (renderFn) {
-        this.els.lensRoot.innerHTML = '';
-        if (!renderFn) {
-            // Show Global Overview instead of empty message
-            A.UI.renderGlobalOverviewLens(this.els.lensRoot);
-            return;
-        }
-        renderFn(this.els.lensRoot);
-    };
-
-    // --- Empty State Utility ---
-    A.UI.getEmptyStateHTML = function (title, message, actionLabel, actionOnClickStr) {
-        // actionOnClickStr should be a string for inline onclick, e.g., "Anansi.UI.switchPanel(\'actors\')"
-        const buttonHtml = actionLabel ? `<button class="btn btn-primary" style="margin-top:16px;" onclick="${actionOnClickStr}">${actionLabel} →</button>` : '';
-
-        return `
-            <div class="empty-state-card" style="margin:auto; max-width:400px; text-align:center; padding:40px 20px;">
-                <div style="opacity:0.2; margin-bottom:16px;">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <line x1="12" y1="8" x2="12" y2="12"></line>
-                        <circle cx="12" cy="16" r="1"></circle>
-                    </svg>
-                </div>
-                <div style="font-size:16px; font-weight:600; color:var(--text-main); margin-bottom:8px;">${title}</div>
-                <div style="font-size:13px; color:var(--text-muted); line-height:1.5;">${message}</div>
-                ${buttonHtml}
-            </div>
-        `;
-    };
-
-    /**
-     * Renders an empty state into a container if the items array is empty.
-     * Returns true if empty state was rendered.
-     */
-    A.UI.renderEmptyState = function (container, items, title, message, action) {
-        if (!items || Object.keys(items).length === 0) {
-            container.innerHTML = A.UI.getEmptyStateHTML(title, message, action?.label, action?.onclick);
-            container.style.display = 'flex';
-            container.style.flexDirection = 'column';
-            container.style.justifyContent = 'center';
-            container.style.height = '100%';
-            return true;
-        }
-        return false;
-    };
-
-    // --- UI Components Namespace ---
-    A.UI.Components = {};
-
-    /**
-     * Smart Tag Input Component
-     * Renders a list of tags as pills + an input field with autocomplete.
-     */
-    A.UI.Components.TagInput = class TagInput {
-        constructor(container, tags, options = {}) {
-            this.container = container;
-            this.tags = tags || [];
-            this.options = options; // { label, onChange, suggestions[], placeholder, color }
-            this.render();
-        }
-
-        render() {
-            this.container.innerHTML = '';
-
-            // Label
-            if (this.options.label) {
-                const label = document.createElement('label');
-                label.className = 'form-label'; // standardized class if available, else inline style mimic
-                label.style.display = 'block';
-                label.style.fontSize = '10px';
-                label.style.fontWeight = 'bold';
-                label.style.color = 'var(--text-muted)';
-                label.style.marginBottom = '4px';
-                label.style.textTransform = 'uppercase';
-                label.textContent = this.options.label;
-                this.container.appendChild(label);
-            }
-
-            // Wrapper
-            const wrap = document.createElement('div');
-            Object.assign(wrap.style, {
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: '4px',
-                padding: '4px',
-                border: '1px solid var(--border-default)',
-                borderRadius: 'var(--radius-md)',
-                minHeight: '32px',
-                background: 'var(--bg-elevated)',
-                width: '100%',
-                boxSizing: 'border-box'
-            });
-
-            // Pills
-            this.tags.forEach((tag, idx) => {
-                const pill = document.createElement('span');
-                const color = this.options.color || 'var(--accent-primary)';
-                const bg = this.options.bg || 'var(--accent-soft)';
-
-                Object.assign(pill.style, {
-                    background: bg,
-                    color: color,
-                    fontSize: '10px',
-                    padding: '2px 8px',
-                    borderRadius: '12px',
-                    cursor: 'default',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    userSelect: 'none'
-                });
-
-                pill.innerHTML = `<span>${tag}</span>`;
-
-                const closeBtn = document.createElement('span');
-                closeBtn.innerHTML = '&times;';
-                closeBtn.style.cursor = 'pointer';
-                closeBtn.style.opacity = '0.6';
-                closeBtn.style.fontWeight = 'bold';
-                closeBtn.onmouseover = () => closeBtn.style.opacity = '1';
-                closeBtn.onmouseout = () => closeBtn.style.opacity = '0.6';
-                closeBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    this.removeTag(idx);
-                };
-
-                pill.appendChild(closeBtn);
-                wrap.appendChild(pill);
-            });
-
-            // Input
-            const input = document.createElement('input');
-            Object.assign(input.style, {
-                border: 'none',
-                background: 'transparent',
-                fontSize: '11px',
-                color: 'var(--text-main)',
-                minWidth: '60px',
-                flex: '1',
-                outline: 'none',
-                padding: '4px'
-            });
-            input.placeholder = this.options.placeholder || '+ Add...';
-
-            // Datalist for suggestions
-            if (this.options.suggestions && this.options.suggestions.length) {
-                const listId = 'dl-' + Math.random().toString(36).substr(2, 6);
-                input.setAttribute('list', listId);
-                const dl = document.createElement('datalist');
-                dl.id = listId;
-                this.options.suggestions.forEach(s => {
-                    const opt = document.createElement('option');
-                    opt.value = s;
-                    dl.appendChild(opt);
-                });
-                wrap.appendChild(dl);
-            }
-
-            // Events
-            const commit = () => {
-                const val = input.value.trim();
-                if (val) {
-                    if (!this.tags.includes(val)) {
-                        this.addTag(val);
-                    }
-                    input.value = '';
-                }
-            };
-
-            input.onkeydown = (e) => {
-                if (e.key === 'Enter' || e.key === ',') {
-                    e.preventDefault();
-                    commit();
-                }
-                if (e.key === 'Backspace' && input.value === '' && this.tags.length > 0) {
-                    this.removeTag(this.tags.length - 1);
-                }
-            };
-
-            input.onblur = commit;
-
-            wrap.appendChild(input);
-            wrap.onclick = () => input.focus();
-
-            this.container.appendChild(wrap);
-        }
-
-        addTag(tag) {
-            this.tags.push(tag);
-            if (this.options.onChange) this.options.onChange(this.tags);
-            this.render();
-        }
-
-        removeTag(index) {
-            this.tags.splice(index, 1);
-            if (this.options.onChange) this.options.onChange(this.tags);
-            this.render();
-        }
-    };
-
-    // --- API Key Manager (Global) ---
-    // --- Provider Presets ---
-    const PROVIDER_PRESETS = {
-        openai: { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', defaultModel: 'gpt-4o-mini', needsKey: true },
-        anthropic: { name: 'Anthropic', baseUrl: 'https://api.anthropic.com/v1', defaultModel: 'claude-3-haiku-20240307', needsKey: true },
-        gemini: { name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta', defaultModel: 'gemini-2.0-flash', needsKey: true },
-        kobold: { name: 'Kobold (Local)', baseUrl: 'http://localhost:5001/api/v1', defaultModel: 'local', needsKey: false },
-        chutes: { name: 'Chutes AI', baseUrl: 'https://llm.chutes.ai/v1', defaultModel: 'deepseek-ai/DeepSeek-V3', needsKey: true },
-        custom: { name: 'Custom', baseUrl: '', defaultModel: '', needsKey: true }
-    };
-
-    A.UI.showApiKeyManager = function () {
-        // Load saved configs from localStorage
-        let configs = JSON.parse(localStorage.getItem('anansi_llm_configs') || '[]');
-        let activeId = localStorage.getItem('anansi_active_config_id') || '';
-
-        // Migration: If old keys exist, migrate them
-        const oldKeys = JSON.parse(localStorage.getItem('anansi_api_keys') || 'null');
-        if (oldKeys && configs.length === 0) {
-            Object.keys(oldKeys).forEach((name, idx) => {
-                configs.push({
-                    id: 'migrated_' + idx,
-                    name: name,
-                    provider: 'custom',
-                    model: '',
-                    baseUrl: '',
-                    apiKey: oldKeys[name]
-                });
-            });
-            localStorage.setItem('anansi_llm_configs', JSON.stringify(configs));
-            localStorage.removeItem('anansi_api_keys');
-        }
-
-        // Ensure at least one config exists
-        if (configs.length === 0) {
-            configs.push({ id: 'default', name: 'Default (Gemini)', provider: 'gemini', model: 'gemini-2.0-flash', baseUrl: '', apiKey: '' });
-            localStorage.setItem('anansi_llm_configs', JSON.stringify(configs));
-            activeId = 'default';
-            localStorage.setItem('anansi_active_config_id', activeId);
-        }
-
-        const saveConfigs = () => localStorage.setItem('anansi_llm_configs', JSON.stringify(configs));
-
-        // Create modal overlay
-        const overlay = document.createElement('div');
-        overlay.id = 'api-config-overlay';
-        overlay.style.cssText = `position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;`;
-
-        const modal = document.createElement('div');
-        modal.style.cssText = `background:var(--bg-panel);border-radius:var(--radius-lg);border:1px solid var(--border-default);width:550px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,0.5);`;
-
-        let currentView = 'list'; // 'list' or 'add'
-        let editingConfig = null;
-
-        const render = () => {
-            modal.innerHTML = '';
-
-            // Header
-            const header = document.createElement('div');
-            header.style.cssText = 'padding:16px;border-bottom:1px solid var(--border-subtle);display:flex;justify-content:space-between;align-items:center;';
-            header.innerHTML = `
-                <h3 style="margin:0;font-size:16px;color:var(--text-primary);">API Configuration</h3>
-                <button id="modal-close" style="background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;">×</button>
-            `;
-            modal.appendChild(header);
-
-            // Body
-            const body = document.createElement('div');
-            body.style.cssText = 'flex:1;overflow-y:auto;padding:16px;';
-
-            if (currentView === 'list') {
-                // Load generation settings
-                const defaultGenSettings = { temperature: 0.7, maxTokens: 0, topP: 1.0, topK: 0, contextSize: 16384, repetitionPenalty: 1.0, frequencyPenalty: 0, presencePenalty: 0 };
-                const genSettings = { ...defaultGenSettings, ...JSON.parse(localStorage.getItem('anansi_gen_settings') || '{}') };
-
-                // --- LIST VIEW ---
-                body.innerHTML = `
-                    <details open style="margin-bottom:16px;padding:12px;background:var(--bg-surface);border-radius:var(--radius-md);border:1px solid var(--border-subtle);">
-                        <summary style="cursor:pointer;font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:bold;">Generation Settings</summary>
-                        <div style="margin-top:12px;display:flex;flex-direction:column;gap:16px;">
-                            
-                            <div class="form-group">
-                                <div style="display:flex;justify-content:space-between;align-items:center;">
-                                    <label class="label" style="font-size:10px;margin:0;">Temperature</label>
-                                    <span id="temp-val" style="font-size:11px;color:var(--accent-primary);font-weight:bold;">${genSettings.temperature}</span>
-                                </div>
-                                <input type="range" id="gen-temp" min="0" max="2" step="0.1" value="${genSettings.temperature}" style="width:100%;">
-                                <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);"><span>0</span><span>1</span><span>2</span></div>
-                                <div style="font-size:9px;color:var(--text-muted);margin-top:2px;">Controls randomness. Lower = focused, higher = creative.</div>
-                            </div>
-                            
-                            <div class="form-group">
-                                <div style="display:flex;justify-content:space-between;align-items:center;">
-                                    <label class="label" style="font-size:10px;margin:0;">Max Tokens</label>
-                                    <span id="maxtok-val" style="font-size:11px;color:var(--accent-primary);font-weight:bold;">${genSettings.maxTokens === 0 ? 'Unlimited' : genSettings.maxTokens}</span>
-                                </div>
-                                <input type="range" id="gen-max-tokens" min="0" max="8192" step="256" value="${genSettings.maxTokens}" style="width:100%;">
-                                <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);"><span>0</span><span>4K</span><span>8K</span></div>
-                                <div style="font-size:9px;color:var(--text-muted);margin-top:2px;">Response length limit. 0 = unlimited.</div>
-                            </div>
-                            
-                            <div class="form-group">
-                                <div style="display:flex;justify-content:space-between;align-items:center;">
-                                    <label class="label" style="font-size:10px;margin:0;">Context Size</label>
-                                    <span id="ctx-val" style="font-size:11px;color:var(--accent-primary);font-weight:bold;">${genSettings.contextSize}</span>
-                                </div>
-                                <input type="range" id="gen-ctx" min="1024" max="131072" step="1024" value="${genSettings.contextSize}" style="width:100%;">
-                                <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);"><span>1K</span><span>64K</span><span>128K</span></div>
-                                <div style="font-size:9px;color:var(--text-muted);margin-top:2px;">Memory window. Lower if you get errors.</div>
-                            </div>
-                            
-                            <details style="padding:8px;background:var(--bg-elevated);border-radius:var(--radius-sm);border:1px solid var(--border-subtle);">
-                                <summary style="cursor:pointer;font-size:10px;color:var(--text-muted);text-transform:uppercase;">Advanced Settings</summary>
-                                <div style="margin-top:12px;display:flex;flex-direction:column;gap:12px;">
-                                    
-                                    <div class="form-group">
-                                        <div style="display:flex;justify-content:space-between;align-items:center;">
-                                            <label class="label" style="font-size:10px;margin:0;">Top P</label>
-                                            <span id="topp-val" style="font-size:11px;color:var(--accent-primary);">${genSettings.topP}</span>
-                                        </div>
-                                        <input type="range" id="gen-top-p" min="0" max="1" step="0.05" value="${genSettings.topP}" style="width:100%;">
-                                    </div>
-                                    
-                                    <div class="form-group">
-                                        <div style="display:flex;justify-content:space-between;align-items:center;">
-                                            <label class="label" style="font-size:10px;margin:0;">Top K</label>
-                                            <span id="topk-val" style="font-size:11px;color:var(--accent-primary);">${genSettings.topK === 0 ? 'Off' : genSettings.topK}</span>
-                                        </div>
-                                        <input type="range" id="gen-top-k" min="0" max="100" step="1" value="${genSettings.topK}" style="width:100%;">
-                                    </div>
-                                    
-                                    <div class="form-group">
-                                        <div style="display:flex;justify-content:space-between;align-items:center;">
-                                            <label class="label" style="font-size:10px;margin:0;">Repetition Penalty</label>
-                                            <span id="rep-val" style="font-size:11px;color:var(--accent-primary);">${genSettings.repetitionPenalty}</span>
-                                        </div>
-                                        <input type="range" id="gen-rep" min="1" max="2" step="0.05" value="${genSettings.repetitionPenalty}" style="width:100%;">
-                                    </div>
-                                    
-                                    <div class="form-group">
-                                        <div style="display:flex;justify-content:space-between;align-items:center;">
-                                            <label class="label" style="font-size:10px;margin:0;">Frequency Penalty</label>
-                                            <span id="freq-val" style="font-size:11px;color:var(--accent-primary);">${genSettings.frequencyPenalty}</span>
-                                        </div>
-                                        <input type="range" id="gen-freq" min="0" max="2" step="0.1" value="${genSettings.frequencyPenalty}" style="width:100%;">
-                                    </div>
-                                    
-                                    <div class="form-group">
-                                        <div style="display:flex;justify-content:space-between;align-items:center;">
-                                            <label class="label" style="font-size:10px;margin:0;">Presence Penalty</label>
-                                            <span id="pres-val" style="font-size:11px;color:var(--accent-primary);">${genSettings.presencePenalty}</span>
-                                        </div>
-                                        <input type="range" id="gen-pres" min="0" max="2" step="0.1" value="${genSettings.presencePenalty}" style="width:100%;">
-                                    </div>
-                                </div>
-                            </details>
-                            
-                        </div>
-                    </details>
-
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                        <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;">Saved Configurations (${configs.length})</div>
-                        <button id="btn-add-config" class="btn btn-primary btn-sm">+ Add Configuration</button>
-                    </div>
-                    <div id="configs-list" style="display:flex;flex-direction:column;gap:8px;"></div>
-                    <div style="margin-top:16px;padding:12px;background:var(--bg-surface);border-radius:var(--radius-md);border:1px solid var(--border-subtle);">
-                        <div style="font-size:10px;color:var(--status-warning);margin-bottom:4px;">⚠️ Note</div>
-                        <div style="font-size:11px;color:var(--text-muted);">API keys are stored in your browser's localStorage. They are never sent to any server except the configured provider.</div>
-                    </div>
-                `;
-
-                // Bind generation settings
-                const saveGenSettings = () => {
-                    const settings = {
-                        temperature: parseFloat(body.querySelector('#gen-temp').value),
-                        maxTokens: parseInt(body.querySelector('#gen-max-tokens').value) || 0,
-                        topP: parseFloat(body.querySelector('#gen-top-p').value),
-                        topK: parseInt(body.querySelector('#gen-top-k').value) || 0,
-                        contextSize: parseInt(body.querySelector('#gen-ctx').value) || 16384,
-                        repetitionPenalty: parseFloat(body.querySelector('#gen-rep').value),
-                        frequencyPenalty: parseFloat(body.querySelector('#gen-freq').value),
-                        presencePenalty: parseFloat(body.querySelector('#gen-pres').value)
-                    };
-                    localStorage.setItem('anansi_gen_settings', JSON.stringify(settings));
-                };
-
-                // Slider bindings with live value display
-                const bindSlider = (id, valId, formatter = v => v) => {
-                    const slider = body.querySelector(id);
-                    const valSpan = body.querySelector(valId);
-                    if (slider && valSpan) {
-                        slider.oninput = (e) => {
-                            valSpan.textContent = formatter(e.target.value);
-                            saveGenSettings();
-                        };
-                    }
-                };
-                bindSlider('#gen-temp', '#temp-val');
-                bindSlider('#gen-max-tokens', '#maxtok-val', v => v === '0' ? 'Unlimited' : v);
-                bindSlider('#gen-ctx', '#ctx-val');
-                bindSlider('#gen-top-p', '#topp-val');
-                bindSlider('#gen-top-k', '#topk-val', v => v === '0' ? 'Off' : v);
-                bindSlider('#gen-rep', '#rep-val');
-                bindSlider('#gen-freq', '#freq-val');
-                bindSlider('#gen-pres', '#pres-val');
-
-                const list = body.querySelector('#configs-list');
-                configs.forEach(cfg => {
-                    const isActive = cfg.id === activeId;
-                    const preset = PROVIDER_PRESETS[cfg.provider] || PROVIDER_PRESETS.custom;
-                    const row = document.createElement('div');
-                    row.style.cssText = `display:flex;align-items:center;gap:12px;padding:12px;background:var(--bg-elevated);border:1px solid ${isActive ? 'var(--accent-primary)' : 'var(--border-subtle)'};border-radius:var(--radius-md);`;
-                    row.innerHTML = `
-                        <div style="flex:1;">
-                            <div style="font-size:13px;font-weight:bold;color:var(--text-primary);display:flex;align-items:center;gap:8px;">
-                                ${cfg.name}
-                                ${isActive ? '<span style="font-size:9px;padding:2px 6px;background:var(--accent-primary);color:white;border-radius:4px;">ACTIVE</span>' : ''}
-                            </div>
-                            <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">${preset.name} • ${cfg.model || preset.defaultModel}</div>
-                        </div>
-                        <div style="display:flex;gap:4px;">
-                            ${!isActive ? `<button class="btn btn-ghost btn-sm btn-activate" data-id="${cfg.id}" style="font-size:10px;">Activate</button>` : ''}
-                            <button class="btn btn-ghost btn-sm btn-edit" data-id="${cfg.id}" style="font-size:10px;">Edit</button>
-                            <button class="btn btn-ghost btn-sm btn-delete" data-id="${cfg.id}" style="font-size:10px;color:var(--status-error);">Delete</button>
-                            <button class="btn btn-ghost btn-sm btn-copy" data-id="${cfg.id}" style="font-size:10px;">Copy</button>
-                            <button class="btn btn-ghost btn-sm btn-test" data-id="${cfg.id}" style="font-size:10px;">Test</button>
-                        </div>
-                    `;
-                    list.appendChild(row);
-                });
-
-                modal.appendChild(body);
-
-                // Bind list events
-                body.querySelector('#btn-add-config').onclick = () => { editingConfig = null; currentView = 'add'; render(); };
-                body.querySelectorAll('.btn-activate').forEach(btn => {
-                    btn.onclick = () => {
-                        activeId = btn.dataset.id;
-                        localStorage.setItem('anansi_active_config_id', activeId);
-                        render();
-                        if (A.State && A.State.notify) A.State.notify(); // Refresh CFG lens
-                        if (A.UI.Toast) A.UI.Toast.show('Configuration activated', 'success');
-                    };
-                });
-                body.querySelectorAll('.btn-edit').forEach(btn => {
-                    btn.onclick = () => {
-                        editingConfig = configs.find(c => c.id === btn.dataset.id);
-                        currentView = 'add';
-                        render();
-                    };
-                });
-                body.querySelectorAll('.btn-delete').forEach(btn => {
-                    btn.onclick = () => {
-                        if (confirm('Delete this configuration?')) {
-                            configs = configs.filter(c => c.id !== btn.dataset.id);
-                            if (activeId === btn.dataset.id && configs.length > 0) activeId = configs[0].id;
-                            saveConfigs();
-                            localStorage.setItem('anansi_active_config_id', activeId);
-                            render();
-                        }
-                    };
-                });
-                // Copy button
-                body.querySelectorAll('.btn-copy').forEach(btn => {
-                    btn.onclick = () => {
-                        const original = configs.find(c => c.id === btn.dataset.id);
-                        if (original) {
-                            const copy = { ...original, id: 'cfg_' + Date.now(), name: original.name + ' (Copy)' };
-                            configs.push(copy);
-                            saveConfigs();
-                            render();
-                            if (A.UI.Toast) A.UI.Toast.show('Configuration copied', 'success');
-                        }
-                    };
-                });
-                // Test button
-                body.querySelectorAll('.btn-test').forEach(btn => {
-                    btn.onclick = async () => {
-                        const cfg = configs.find(c => c.id === btn.dataset.id);
-                        if (!cfg) return;
-                        const preset = PROVIDER_PRESETS[cfg.provider] || PROVIDER_PRESETS.custom;
-                        const baseUrl = cfg.baseUrl || preset.baseUrl;
-                        const model = cfg.model || preset.defaultModel;
-                        const apiKey = cfg.apiKey;
-
-                        btn.textContent = '...';
-                        btn.disabled = true;
-
-                        try {
-                            let success = false;
-                            if (cfg.provider === 'gemini') {
-                                // Gemini uses different endpoint
-                                const url = `${baseUrl}/models/${model}?key=${apiKey}`;
-                                const res = await fetch(url);
-                                success = res.ok;
-                            } else {
-                                // OpenAI-compatible
-                                const url = `${baseUrl}/chat/completions`;
-                                const res = await fetch(url, {
-                                    method: 'POST',
-                                    headers: {
-                                        'Content-Type': 'application/json',
-                                        'Authorization': `Bearer ${apiKey}`
-                                    },
-                                    body: JSON.stringify({
-                                        model: model,
-                                        messages: [{ role: 'user', content: 'Hi' }],
-                                        max_tokens: 1
-                                    })
-                                });
-                                success = res.ok || res.status === 400; // 400 can mean "bad request but connection works"
-                            }
-                            if (success) {
-                                if (A.UI.Toast) A.UI.Toast.show('Connection successful!', 'success');
-                            } else {
-                                if (A.UI.Toast) A.UI.Toast.show('Connection failed. Check your settings.', 'error');
-                            }
-                        } catch (e) {
-                            if (A.UI.Toast) A.UI.Toast.show('Connection error: ' + e.message, 'error');
-                        }
-                        btn.textContent = 'Test';
-                        btn.disabled = false;
-                    };
-                });
-
-            } else {
-                // --- ADD/EDIT VIEW ---
-                const isEdit = !!editingConfig;
-                const cfg = editingConfig || { id: '', name: '', provider: 'openai', model: '', baseUrl: '', apiKey: '' };
-
-                body.innerHTML = `
-                    <button id="btn-back" class="btn btn-ghost btn-sm" style="margin-bottom:12px;">← Back to List</button>
-                    <h4 style="margin:0 0 16px 0;font-size:14px;">${isEdit ? 'Edit Configuration' : 'Add New Configuration'}</h4>
-                    
-                    <div style="margin-bottom:16px;">
-                        <div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;">Provider</div>
-                        <div id="provider-tabs" style="display:flex;flex-wrap:wrap;gap:4px;"></div>
-                    </div>
-
-                    <div class="form-group" style="margin-bottom:12px;">
-                        <label class="label" style="font-size:11px;">Configuration Name</label>
-                        <input id="cfg-name" class="input" value="${cfg.name}" placeholder="My OpenAI Key">
-                    </div>
-                    <div class="form-group" style="margin-bottom:12px;">
-                        <label class="label" style="font-size:11px;">Model</label>
-                        <input id="cfg-model" class="input" value="${cfg.model}" placeholder="e.g., gpt-4o-mini">
-                    </div>
-                    <div class="form-group" id="url-group" style="margin-bottom:12px;display:none;">
-                        <label class="label" style="font-size:11px;">Base URL</label>
-                        <input id="cfg-url" class="input" value="${cfg.baseUrl}" placeholder="https://api.example.com/v1">
-                    </div>
-                    <div class="form-group" id="key-group" style="margin-bottom:12px;">
-                        <label class="label" style="font-size:11px;">API Key</label>
-                        <input id="cfg-key" class="input" type="password" value="${cfg.apiKey}" placeholder="sk-...">
-                    </div>
-
-                    <button id="btn-save-config" class="btn btn-primary" style="width:100%;margin-top:8px;">${isEdit ? 'Save Changes' : 'Add Configuration'}</button>
-                `;
-
-                modal.appendChild(body);
-
-                // Provider tabs
-                const tabsContainer = body.querySelector('#provider-tabs');
-                let selectedProvider = cfg.provider || 'openai';
-
-                const renderProviderTabs = () => {
-                    tabsContainer.innerHTML = Object.keys(PROVIDER_PRESETS).map(key => {
-                        const p = PROVIDER_PRESETS[key];
-                        const isSelected = key === selectedProvider;
-                        return `<button class="btn btn-sm provider-tab" data-provider="${key}" style="font-size:10px;${isSelected ? 'background:var(--accent-primary);color:white;' : ''}">${p.name}</button>`;
-                    }).join('');
-
-                    // Update field visibility
-                    const preset = PROVIDER_PRESETS[selectedProvider];
-                    body.querySelector('#url-group').style.display = selectedProvider === 'custom' ? 'block' : 'none';
-                    body.querySelector('#key-group').style.display = preset.needsKey ? 'block' : 'none';
-                    if (!isEdit) {
-                        body.querySelector('#cfg-model').placeholder = preset.defaultModel || 'Model ID';
-                    }
-
-                    // Bind tab clicks
-                    tabsContainer.querySelectorAll('.provider-tab').forEach(tab => {
-                        tab.onclick = () => {
-                            selectedProvider = tab.dataset.provider;
-                            renderProviderTabs();
-                        };
-                    });
-                };
-                renderProviderTabs();
-
-                // Back button
-                body.querySelector('#btn-back').onclick = () => { currentView = 'list'; editingConfig = null; render(); };
-
-                // Save button
-                body.querySelector('#btn-save-config').onclick = () => {
-                    const name = body.querySelector('#cfg-name').value.trim();
-                    const model = body.querySelector('#cfg-model').value.trim() || PROVIDER_PRESETS[selectedProvider].defaultModel;
-                    const apiKey = body.querySelector('#cfg-key').value.trim();
-                    const baseUrl = body.querySelector('#cfg-url').value.trim() || PROVIDER_PRESETS[selectedProvider].baseUrl;
-
-                    if (!name) { alert('Please enter a configuration name.'); return; }
-
-                    if (isEdit) {
-                        editingConfig.name = name;
-                        editingConfig.provider = selectedProvider;
-                        editingConfig.model = model;
-                        editingConfig.baseUrl = baseUrl;
-                        editingConfig.apiKey = apiKey;
-                    } else {
-                        configs.push({
-                            id: 'cfg_' + Date.now(),
-                            name, provider: selectedProvider, model, baseUrl, apiKey
-                        });
-                    }
-                    saveConfigs();
-                    if (A.UI.Toast) A.UI.Toast.show(isEdit ? 'Configuration updated' : 'Configuration added', 'success');
-                    currentView = 'list';
-                    editingConfig = null;
-                    render();
-                };
-            }
-
-            // Close button
-            modal.querySelector('#modal-close').onclick = () => overlay.remove();
-        };
-
-        render();
-        overlay.appendChild(modal);
-        document.body.appendChild(overlay);
-        overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
-    };
-
-    // Helper to get active LLM config
-    A.UI.getActiveLLMConfig = function () {
-        const configs = JSON.parse(localStorage.getItem('anansi_llm_configs') || '[]');
-        const activeId = localStorage.getItem('anansi_active_config_id') || '';
-        const cfg = configs.find(c => c.id === activeId) || configs[0] || null;
-        if (!cfg) return null;
-        const preset = PROVIDER_PRESETS[cfg.provider] || PROVIDER_PRESETS.custom;
-        return {
-            provider: cfg.provider,
-            model: cfg.model || preset.defaultModel,
-            baseUrl: cfg.baseUrl || preset.baseUrl,
-            apiKey: cfg.apiKey
-        };
-    };
-
-    // Helper to get generation settings
-    A.UI.getGenerationSettings = function () {
-        const defaults = { temperature: 0.7, maxTokens: 0, topP: 1.0, topK: 0, contextSize: 16384, repetitionPenalty: 1.0, frequencyPenalty: 0, presencePenalty: 0 };
-        return { ...defaults, ...JSON.parse(localStorage.getItem('anansi_gen_settings') || '{}') };
-    };
+    // Note: Modal, Toast, flashSuccess, Components (TagInput), EmptyState, 
+    // GlobalOverviewLens, and API Config are now in separate files:
+    // - js/core/ui-modal.js
+    // - js/core/ui-components.js
+    // - js/core/ui-api-config.js
 
 })(window.Anansi);
-
