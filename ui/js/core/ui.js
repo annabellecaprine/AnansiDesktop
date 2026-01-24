@@ -2,18 +2,32 @@
  * Anansi UI Core
  * File: js/core/ui.js
  * Purpose: Layout manager, Navigation, and Panel Rendering.
+ * 
+ * Manages the application shell, sidebar navigation, panel switching,
+ * and the lens (side panel) system.
  */
 
 (function (A) {
     'use strict';
 
+    /** @type {string} Currently active panel ID */
     let activePanelId = 'project';
-    let navSearchTerm = ''; // Search filter for sidebar
-    let panelHistory = []; // Track last 5 visited panels
+
+    /** @type {string} Search filter for sidebar */
+    let navSearchTerm = '';
+
+    /** @type {string[]} History of visited panels for back navigation */
+    let panelHistory = [];
+
+    /** @type {number} Maximum panels to keep in history */
     const MAX_HISTORY = 5;
 
+    // Pagination State
+    let navPage = 0;
+    const NAV_PAGE_SIZE = 3;
+
     // Define Category Order (Updated structure)
-    const categoryOrder = ['Loom', 'Seeds', 'Weave', 'Magic', 'Immersion', 'Sacred Tools', 'Deep', 'Forbidden Secrets', 'RPG Experiment'];
+    const categoryOrder = ['Loom', 'Seeds', 'Weave', 'Magic', 'Sacred Tools', 'Deep', 'Forbidden Secrets', 'RPG Experiment'];
 
     const ICONS = {
         'project': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>',
@@ -36,7 +50,16 @@
         'nabu': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="2" width="18" height="20" rx="2"/><path d="M7 7h10M7 11h8M7 15h6M7 19h4"/></svg>'
     };
 
+    /**
+     * UI management singleton.
+     * Handles navigation, panel rendering, and application shell.
+     * @namespace
+     */
     const UI = {
+        /**
+         * Initialize the UI system.
+         * Sets up DOM references, event handlers, and renders initial state.
+         */
         init: function () {
             // DOM Elements
             this.els = {
@@ -96,7 +119,7 @@
 
 
             // About Modal (Clicking Logo)
-            const logo = document.querySelector('.app-logo');
+            const logo = /** @type {HTMLElement} */ (document.querySelector('.app-logo'));
             if (logo) {
                 logo.style.cursor = 'pointer';
                 logo.title = 'About Anansi';
@@ -138,8 +161,9 @@
                 input.type = 'file';
                 input.accept = '.json,.anansi.json';
                 input.onchange = (e) => {
-                    if (e.target.files[0]) {
-                        A.IO.importFromFile(e.target.files[0]);
+                    const target = /** @type {HTMLInputElement} */ (e.target);
+                    if (target.files && target.files[0]) {
+                        A.IO.importFromFile(target.files[0]);
                         // Toast appears in IO.importFromFile on success
                     }
                 };
@@ -222,7 +246,7 @@
                 const cmdKey = e.metaKey || e.ctrlKey;
 
                 // Ignore if typing in an input field
-                const activeEl = document.activeElement;
+                const activeEl = /** @type {HTMLElement | null} */ (document.activeElement);
                 if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable)) {
                     return;
                 }
@@ -279,7 +303,8 @@
             const navSearchInput = document.getElementById('nav-search-input');
             if (navSearchInput) {
                 navSearchInput.addEventListener('input', (e) => {
-                    navSearchTerm = e.target.value.toLowerCase();
+                    const target = /** @type {HTMLInputElement} */ (e.target);
+                    navSearchTerm = target.value.toLowerCase();
                     this.refreshNav();
                 });
             }
@@ -353,7 +378,53 @@
             });
 
             // Render Categories in Order
-            categoryOrder.forEach(cat => {
+            const totalPages = Math.ceil(categoryOrder.length / NAV_PAGE_SIZE);
+
+            // Render Pagination Header (Only if not searching)
+            if (!navSearchTerm) {
+                const pageControl = document.createElement('div');
+                pageControl.style.cssText = "display:flex; align-items:center; justify-content:space-between; padding:4px 8px; background:var(--bg-elevated); border-bottom:1px solid var(--border-subtle); margin-bottom:2px; position:sticky; top:0; z-index:10;";
+
+                const btnPrev = document.createElement('button');
+                btnPrev.textContent = "◀";
+                btnPrev.style.cssText = "background:transparent; border:none; color:var(--text-secondary); cursor:pointer; padding:4px 8px; font-size:10px;";
+                btnPrev.disabled = navPage === 0;
+                btnPrev.style.opacity = navPage === 0 ? "0.3" : "1";
+                btnPrev.onclick = () => {
+                    if (navPage > 0) {
+                        navPage--;
+                        this.refreshNav();
+                    }
+                };
+
+                const label = document.createElement('span');
+                label.style.cssText = "font-size:10px; font-weight:600; color:var(--text-muted); text-transform:uppercase;";
+                label.textContent = `Page ${navPage + 1} / ${totalPages}`;
+
+                const btnNext = document.createElement('button');
+                btnNext.textContent = "▶";
+                btnNext.style.cssText = "background:transparent; border:none; color:var(--text-secondary); cursor:pointer; padding:4px 8px; font-size:10px;";
+                btnNext.disabled = navPage >= totalPages - 1;
+                btnNext.style.opacity = navPage >= totalPages - 1 ? "0.3" : "1";
+                btnNext.onclick = () => {
+                    if (navPage < totalPages - 1) {
+                        navPage++;
+                        this.refreshNav();
+                    }
+                };
+
+                pageControl.appendChild(btnPrev);
+                pageControl.appendChild(label);
+                pageControl.appendChild(btnNext);
+                container.appendChild(pageControl);
+            }
+
+            // Determine visible categories
+            const visibleCategories = navSearchTerm
+                ? categoryOrder
+                : categoryOrder.slice(navPage * NAV_PAGE_SIZE, (navPage + 1) * NAV_PAGE_SIZE);
+
+            visibleCategories.forEach(cat => {
                 const groupItems = groups[cat];
                 if (!groupItems || groupItems.length === 0) return;
 
@@ -400,7 +471,7 @@
                     const newState = wasCollapsed ? 'flex' : 'none';
                     list.style.display = newState;
 
-                    const chevron = header.querySelector('.nav-chevron');
+                    const chevron = /** @type {HTMLElement | null} */ (header.querySelector('.nav-chevron'));
                     if (chevron) chevron.style.transform = newState === 'none' ? 'rotate(-90deg)' : 'rotate(0deg)';
 
                     // Save
@@ -511,7 +582,7 @@
                             const was = subList.style.display === 'none';
                             const newVal = was ? 'flex' : 'none';
                             subList.style.display = newVal;
-                            const sc = subHeader.querySelector('.sub-chev');
+                            const sc = /** @type {HTMLElement | null} */ (subHeader.querySelector('.sub-chev'));
                             if (sc) sc.style.transform = newVal === 'none' ? 'rotate(-90deg)' : 'rotate(0deg)';
 
                             // Persist
@@ -529,6 +600,9 @@
             });
         },
 
+        /**
+         * Refresh navigation and re-render the current panel.
+         */
         refresh: function () {
             this.refreshNav();
             this.switchPanel(activePanelId);
@@ -540,6 +614,13 @@
             }
         },
 
+        /**
+         * Switch to a different panel by ID.
+         * Updates navigation, renders the panel, and manages history.
+         * 
+         * @param {string} id - Panel ID to switch to
+         * @param {Object} [context] - Optional context to pass to panel render function
+         */
         switchPanel: function (id, context) {
             try {
                 // Track panel history (skip if it's the same panel)
@@ -560,6 +641,22 @@
                 }
 
                 activePanelId = id;
+
+                // Auto-Pagination: Ensure the new panel is visible
+                if (!navSearchTerm) {
+                    const sections = A.getNavSections();
+                    const target = sections.find(s => s.id === id);
+                    if (target && target.category) {
+                        const catIndex = categoryOrder.indexOf(target.category);
+                        if (catIndex !== -1) {
+                            const neededPage = Math.floor(catIndex / NAV_PAGE_SIZE);
+                            if (neededPage !== navPage) {
+                                navPage = neededPage;
+                            }
+                        }
+                    }
+                }
+
                 this.refreshNav(); // Update active state
 
                 // Mobile: Auto-close nav drawer on panel switch
@@ -596,12 +693,14 @@
                     if (section.render) {
                         try {
                             section.render(this.els.panelRoot, context);
+                            // Emit panel switch event for interested listeners
+                            if (A.Events) A.Events.emit('panel:switched', { id, context });
                         } catch (renderErr) {
                             console.error(`[UI] Failed to render panel ${id}:`, renderErr);
-                            this.els.panelRoot.innerHTML = `<div class="empty-state error-state">
-                                <div style="color:var(--status-error); margin-bottom:8px;">Panel Crash</div>
-                                <div style="font-size:11px; font-family:monospace;">${renderErr.message}</div>
-                            </div>`;
+                            this.renderErrorState(this.els.panelRoot, renderErr, () => {
+                                // Retry callback: recursively call switchPanel to retry rendering
+                                this.switchPanel(id, context);
+                            });
                         }
                     } else {
                         this.els.panelRoot.innerHTML = `<div class="empty-state">Unable to load panel.</div>`;
@@ -613,6 +712,10 @@
             }
         },
 
+        /**
+         * Set the lens (side panel) content.
+         * @param {function(HTMLElement): void|null} renderFn - Function to render lens content, or null to clear
+         */
         setLens: function (renderFn) {
             this.els.lensRoot.innerHTML = '';
             if (!renderFn) {
@@ -622,6 +725,9 @@
             renderFn(this.els.lensRoot);
         },
 
+        /**
+         * Navigate back to the previous panel in history.
+         */
         goBack: function () {
             if (panelHistory.length === 0) return;
 
@@ -639,6 +745,10 @@
             activePanelId = temp; // Prevent switchPanel from re-adding to history
         },
 
+        /**
+         * Toggle the lens panel visibility.
+         * @param {boolean} [force] - Force open (true) or closed (false)
+         */
         toggleLens: function (force) {
             const shell = this.els.appShell;
 
@@ -656,7 +766,40 @@
             } else {
                 shell.classList.remove('lens-collapsed');
             }
-            localStorage.setItem('anansi_lens_collapsed', isCollapsed);
+            localStorage.setItem('anansi_lens_collapsed', String(isCollapsed));
+        },
+
+        /**
+         * Render a standardized error state into a container.
+         * @param {HTMLElement} container - Target container
+         * @param {Error} error - The error object
+         * @param {(e: Event) => void} [retryCallback] - Optional callback for retry button
+         */
+        renderErrorState: function (container, error, retryCallback) {
+            container.innerHTML = `
+                <div class="empty-state error-state" style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; padding:32px; text-align:center;">
+                    <div style="font-size:48px; margin-bottom:16px;">💥</div>
+                    <div style="font-size:18px; font-weight:bold; color:var(--status-error); margin-bottom:8px;">Panel Crashed</div>
+                    <div style="font-size:12px; color:var(--text-muted); margin-bottom:16px;">The application encountered an unexpected error.</div>
+                    <div style="background:var(--bg-deep); padding:12px; border-radius:6px; font-family:monospace; font-size:11px; max-width:600px; overflow:auto; margin-bottom:24px; border:1px solid var(--border-subtle); text-align:left; width:100%;">
+                        <div style="color:var(--status-error); font-weight:bold; margin-bottom:4px;">${error.name || 'Error'}</div>
+                        <div>${error.message || 'Unknown error'}</div>
+                        ${error.stack ? `<div style="margin-top:8px; opacity:0.6; white-space:pre-wrap;">${error.stack.split('\n').slice(0, 3).join('\n')}...</div>` : ''}
+                    </div>
+                    <div style="display:flex; gap:12px;">
+                        ${retryCallback ? '<button id="err-retry-btn" class="btn btn-primary">🔄 Retry Panel</button>' : ''}
+                        <button id="err-reload-btn" class="btn btn-ghost">Reload App</button>
+                    </div>
+                </div>
+            `;
+
+            if (retryCallback) {
+                const retryBtn = container.querySelector('#err-retry-btn');
+                if (retryBtn) /** @type {HTMLElement} */ (retryBtn).onclick = retryCallback;
+            }
+
+            const reloadBtn = container.querySelector('#err-reload-btn');
+            if (reloadBtn) /** @type {HTMLElement} */ (reloadBtn).onclick = () => window.location.reload();
         }
     };
 
@@ -666,7 +809,8 @@
         if (window.innerWidth < 768 && shell && shell.classList.contains('lens-open')) {
             const lens = document.querySelector('.web-lens');
             const lensBtn = document.getElementById('btn-toggle-lens');
-            if (lens && !lens.contains(e.target) && lensBtn && !lensBtn.contains(e.target)) {
+            const target = /** @type {Node} */ (e.target);
+            if (lens && !lens.contains(target) && lensBtn && !lensBtn.contains(target)) {
                 shell.classList.remove('lens-open');
             }
         }
@@ -706,4 +850,5 @@
     // - js/core/ui-components.js
     // - js/core/ui-api-config.js
 
+    // @ts-ignore - Anansi is a global defined in anansi.js
 })(window.Anansi);
