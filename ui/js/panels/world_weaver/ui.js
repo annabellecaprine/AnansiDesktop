@@ -723,7 +723,7 @@
 
         const castListHtml = cast.map((c, i) => `
             <label style="display:flex; align-items:center; padding:12px; background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:8px; cursor:pointer; margin-bottom:8px;">
-                <input type="checkbox" value="${c.name}" checked style="width:18px; height:18px; margin-right:12px;">
+                <input type="checkbox" value="${c.name}" ${isEnsemble ? 'checked' : ''} style="width:18px; height:18px; margin-right:12px;">
                 <div style="flex:1;">
                     <div style="font-weight:600;">${c.name}</div>
                     <div style="font-size:12px; color:var(--text-muted);">${c.role} (${c.significance})</div>
